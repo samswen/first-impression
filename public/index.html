@@ -1,0 +1,1706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>First Impression</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #1a1a1a;
+      border-bottom: 1px solid #333;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .panels {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .panel {
+      border-right: 1px solid #333;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel:last-child { border-right: none; }
+
+    .panel-left { width: 420px; min-width: 420px; }
+    .panel-right { flex: 1; }
+
+    .panel-header {
+      padding: 12px 16px;
+      background: #1a1a1a;
+      border-bottom: 1px solid #333;
+      font-weight: 600;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #888;
+    }
+
+    .panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    /* --- Form elements --- */
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #888;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    input[type="text"], input[type="url"] {
+      width: 100%;
+      padding: 8px 10px;
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-size: 13px;
+      outline: none;
+    }
+
+    input:focus { border-color: #6366f1; }
+
+    .field { margin-bottom: 14px; }
+
+    .toggle-field {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .toggle-field label {
+      margin-bottom: 0;
+      text-transform: none;
+      font-weight: normal;
+      color: #e0e0e0;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .toggle-field input { display: none; }
+
+    .toggle-switch {
+      width: 36px;
+      height: 20px;
+      background: #444;
+      border-radius: 10px;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      background: #888;
+      border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+
+    input:checked + .toggle-switch {
+      background: #6366f1;
+    }
+
+    input:checked + .toggle-switch::after {
+      transform: translateX(16px);
+      background: #fff;
+    }
+
+    /* --- Query list --- */
+    .query-list { display: flex; flex-direction: column; gap: 6px; }
+
+    .query-row {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .query-row input { flex: 1; }
+
+    .btn-icon {
+      width: 28px;
+      height: 28px;
+      background: #333;
+      border: 1px solid #555;
+      border-radius: 4px;
+      color: #ccc;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .btn-icon:hover { background: #444; color: #fff; }
+
+    .btn-add {
+      margin-top: 4px;
+      font-size: 12px;
+      padding: 4px 10px;
+      background: none;
+      border: 1px dashed #555;
+      border-radius: 4px;
+      color: #888;
+      cursor: pointer;
+    }
+
+    .btn-add:hover { border-color: #888; color: #ccc; }
+
+    /* --- Buttons --- */
+    .btn-primary {
+      width: 100%;
+      padding: 10px;
+      background: #6366f1;
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-primary:hover { background: #5558e6; }
+    .btn-primary:disabled { background: #444; color: #888; cursor: not-allowed; }
+
+    .btn-secondary {
+      padding: 8px 14px;
+      background: #333;
+      border: 1px solid #555;
+      border-radius: 6px;
+      color: #ccc;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .btn-secondary:hover { background: #444; color: #fff; }
+    .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* --- Progress log --- */
+    .progress-log {
+      margin-top: 14px;
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 8px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      max-height: 300px;
+      overflow-y: auto;
+      line-height: 1.5;
+    }
+
+    .log-line { color: #888; }
+    .log-line.action-start { color: #6366f1; }
+    .log-line.action-end { color: #22c55e; }
+    .log-line.error { color: #ef4444; }
+    .log-line.done { color: #22c55e; font-weight: 600; }
+
+    /* --- Recordings list --- */
+    .sidebar-divider {
+      border: none;
+      border-top: 1px solid #333;
+      margin: 16px 0;
+    }
+
+    .sidebar-section-header {
+      font-size: 12px;
+      font-weight: 600;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+    }
+
+    .recording-item {
+      padding: 8px 10px;
+      border: 1px solid #333;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .recording-item:hover { border-color: #555; }
+    .recording-item.selected { border-color: #6366f1; background: #1a1a2e; }
+
+    .recording-item-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .recording-id {
+      font-size: 11px;
+      font-weight: 600;
+      color: #ccc;
+      font-family: monospace;
+    }
+
+    .recording-meta {
+      font-size: 10px;
+      color: #666;
+      margin-top: 1px;
+    }
+
+    .recording-status {
+      display: inline-block;
+      font-size: 9px;
+      padding: 1px 5px;
+      border-radius: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .status-recorded { background: #1a3a1a; color: #4ade80; }
+    .status-trimmed { background: #1a1a3a; color: #818cf8; }
+    .status-in-progress { background: #3a3a1a; color: #facc15; }
+
+    .btn-delete {
+      width: 22px;
+      height: 22px;
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: #555;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+      padding: 0;
+    }
+
+    .btn-delete:hover { color: #ef4444; border-color: #ef4444; }
+
+    /* --- Right panel detail --- */
+    .detail-section {
+      margin-bottom: 20px;
+    }
+
+    .detail-section h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: #888;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    /* --- Timeline bar --- */
+    .timeline-bar-wrap {
+      position: relative;
+      cursor: pointer;
+    }
+
+    .timeline-bar {
+      display: flex;
+      height: 32px;
+      border-radius: 4px;
+      overflow: hidden;
+      background: #222;
+    }
+
+    .timeline-playhead {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 2px;
+      height: 32px;
+      background: #fff;
+      pointer-events: none;
+      box-shadow: 0 0 4px rgba(255,255,255,0.5);
+      display: none;
+      z-index: 10;
+    }
+
+    .timeline-segment {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.8);
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      padding: 0 4px;
+      border-right: 1px solid #111;
+    }
+
+    .timeline-segment:last-child { border-right: none; }
+
+    /* --- Freeze table --- */
+    .freeze-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .freeze-table th {
+      text-align: left;
+      padding: 6px 8px;
+      border-bottom: 1px solid #333;
+      color: #888;
+      font-weight: 600;
+      font-size: 11px;
+    }
+
+    .freeze-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #222;
+      vertical-align: middle;
+    }
+
+    .freeze-thumb-wrap {
+      position: relative;
+      display: inline-block;
+    }
+
+    .freeze-thumb {
+      width: 80px;
+      height: 45px;
+      object-fit: cover;
+      border-radius: 3px;
+      background: #333;
+      cursor: pointer;
+    }
+
+    .freeze-thumb-popup {
+      display: none;
+      position: fixed;
+      z-index: 10000;
+      border: 2px solid #555;
+      border-radius: 6px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+      pointer-events: none;
+      width: 640px;
+      height: auto;
+    }
+
+    .freeze-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      align-items: center;
+    }
+
+    /* --- Video player --- */
+    .video-container {
+      background: #000;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .video-container video {
+      width: 100%;
+      display: block;
+    }
+
+    .video-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+    }
+
+    .vc-btn {
+      width: 28px;
+      height: 28px;
+      background: none;
+      border: 1px solid #555;
+      border-radius: 4px;
+      color: #ccc;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .vc-btn:hover { background: #333; color: #fff; }
+
+    .vc-time {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      color: #888;
+      flex-shrink: 0;
+    }
+
+    .vc-seek {
+      flex: 1;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: #333;
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .vc-seek::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      background: #6366f1;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    .vc-volume {
+      width: 60px;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: #333;
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .vc-volume::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 10px;
+      height: 10px;
+      background: #888;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    .video-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .video-tab {
+      padding: 6px 12px;
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: #888;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .video-tab.active { background: #6366f1; border-color: #6366f1; color: #fff; }
+    .video-tab:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .video-tab-x {
+      margin-left: 6px;
+      font-size: 14px;
+      color: #888;
+      cursor: pointer;
+    }
+
+    .video-tab-x:hover { color: #ef4444; }
+    .video-tab.active .video-tab-x { color: rgba(255,255,255,0.5); }
+    .video-tab.active .video-tab-x:hover { color: #fff; }
+
+    /* --- Edit bar --- */
+    .edit-bar-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 3px;
+    }
+
+    .edit-mode-toggle {
+      display: flex;
+      border: 1px solid #444;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .edit-mode-toggle button {
+      padding: 1px 8px;
+      font-size: 10px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      background: #222;
+      color: #888;
+    }
+
+    .edit-mode-toggle button.active-keep { background: #22c55e; color: #fff; }
+    .edit-mode-toggle button.active-cut { background: #ef4444; color: #fff; }
+
+    .edit-bar {
+      height: 32px;
+      position: relative;
+      border-radius: 4px;
+      background: #1a1a1a;
+      overflow: hidden;
+      cursor: crosshair;
+      user-select: none;
+    }
+
+    .edit-bar .keep-region {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      background: #22c55e;
+      opacity: 0.7;
+    }
+
+    .edit-bar .cut-region {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      background: #ef4444;
+      opacity: 0.7;
+    }
+
+    .edit-bar .drag-preview {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      opacity: 0.4;
+      pointer-events: none;
+    }
+
+    .edit-summary-bar {
+      height: 12px;
+      position: relative;
+      border-radius: 2px;
+      background: #1a1a1a;
+      overflow: hidden;
+      margin-top: 3px;
+      cursor: pointer;
+    }
+
+    .edit-summary-bar .seg-keep {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      background: #22c55e;
+      opacity: 0.6;
+    }
+
+    .edit-summary-bar .seg-cut {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      background: #ef4444;
+      opacity: 0.6;
+    }
+
+    .empty-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #555;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>First Impression</h1>
+</header>
+
+<div class="panels">
+  <!-- Left Panel: New Recording -->
+  <div class="panel panel-left">
+    <div class="panel-header">New Recording</div>
+    <div class="panel-body">
+      <div class="field">
+        <label for="rec-url">Target URL</label>
+        <input type="url" id="rec-url" value="https://demo-store.xinfer.ai">
+      </div>
+
+      <div class="field">
+        <label>Queries</label>
+        <div class="query-list" id="query-list">
+          <div class="query-row">
+            <input type="text" value="Show me snowboards under $700">
+            <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>
+          </div>
+          <div class="query-row">
+            <input type="text" value="Tell me about the Hydrogen">
+            <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>
+          </div>
+          <div class="query-row">
+            <input type="text" value="Add it to my cart">
+            <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>
+          </div>
+          <div class="query-row">
+            <input type="text" value="Let's check out">
+            <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>
+          </div>
+        </div>
+        <button class="btn-add" onclick="addQuery()">+ Add query</button>
+      </div>
+
+      <label class="toggle-field" for="rec-headed">
+        <input type="checkbox" id="rec-headed">
+        <span class="toggle-switch"></span>
+        <span>Show browser (headed)</span>
+      </label>
+
+      <button class="btn-primary" id="btn-record" onclick="startRecording()">Start Recording</button>
+
+      <div class="progress-log" id="progress-log" style="display:none"></div>
+
+      <hr class="sidebar-divider">
+      <div class="sidebar-section-header">Recordings</div>
+      <div id="recordings-list"></div>
+    </div>
+  </div>
+
+  <!-- Right Panel: Review & Trim -->
+  <div class="panel panel-right">
+    <div class="panel-header">Review & Trim</div>
+    <div class="panel-body" id="detail-panel">
+      <div class="empty-state">Select a recording</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let selectedId = null;
+
+  // --- Local storage state ---
+  const STORAGE_KEY = 'first-impression-state';
+
+  function loadState() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    } catch { return {}; }
+  }
+
+  function saveRecordingState(id, video, speed) {
+    const state = loadState();
+    if (!state.recordings) state.recordings = {};
+    state.recordings[id] = { video, speed };
+    state.lastSelected = id;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function getRecordingState(id) {
+    const state = loadState();
+    return state.recordings?.[id] || null;
+  }
+
+  function getLastSelected() {
+    return loadState().lastSelected || null;
+  }
+
+  function removeRecordingState(id) {
+    const state = loadState();
+    if (state.recordings) delete state.recordings[id];
+    if (state.lastSelected === id) state.lastSelected = null;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function saveFormState() {
+    const state = loadState();
+    state.form = {
+      url: document.getElementById('rec-url').value,
+      queries: getQueries(),
+      headed: document.getElementById('rec-headed').checked,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function restoreFormState() {
+    const state = loadState();
+    if (!state.form) return;
+    const { url, queries, headed } = state.form;
+    if (url) document.getElementById('rec-url').value = url;
+    if (headed) document.getElementById('rec-headed').checked = headed;
+    if (queries && queries.length > 0) {
+      const list = document.getElementById('query-list');
+      list.innerHTML = '';
+      for (const q of queries) {
+        const row = document.createElement('div');
+        row.className = 'query-row';
+        row.innerHTML = `<input type="text" value="${q.replace(/"/g, '&quot;')}">
+          <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>`;
+        list.appendChild(row);
+      }
+    }
+  }
+
+  // --- Query list management ---
+  function addQuery() {
+    const list = document.getElementById('query-list');
+    const row = document.createElement('div');
+    row.className = 'query-row';
+    row.innerHTML = `
+      <input type="text" placeholder="Enter a query...">
+      <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>
+    `;
+    list.appendChild(row);
+    row.querySelector('input').focus();
+    saveFormState();
+  }
+
+  function removeQuery(btn) {
+    const list = document.getElementById('query-list');
+    if (list.children.length > 1) {
+      btn.parentElement.remove();
+      saveFormState();
+    }
+  }
+
+  function getQueries() {
+    return Array.from(document.querySelectorAll('#query-list input'))
+      .map(i => i.value.trim())
+      .filter(v => v.length > 0);
+  }
+
+  // --- Start recording ---
+  async function startRecording() {
+    const url = document.getElementById('rec-url').value.trim();
+    const queries = getQueries();
+    const headed = document.getElementById('rec-headed').checked;
+
+    if (!url || queries.length === 0) return;
+
+    const btn = document.getElementById('btn-record');
+    btn.disabled = true;
+    btn.textContent = 'Recording...';
+
+    const log = document.getElementById('progress-log');
+    log.style.display = 'block';
+    log.innerHTML = '';
+
+    try {
+      const res = await fetch('/api/recordings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, queries, headed }),
+      });
+      const { id } = await res.json();
+
+      // Connect to SSE
+      const source = new EventSource(`/api/recordings/${id}/events`);
+      source.onmessage = (e) => {
+        const event = JSON.parse(e.data);
+        const line = document.createElement('div');
+        line.className = `log-line ${event.type}`;
+        line.textContent = event.message;
+        log.appendChild(line);
+        log.scrollTop = log.scrollHeight;
+
+        if (event.type === 'done' || event.type === 'error') {
+          source.close();
+          btn.disabled = false;
+          btn.textContent = 'Start Recording';
+          loadRecordings();
+        }
+      };
+    } catch (err) {
+      const line = document.createElement('div');
+      line.className = 'log-line error';
+      line.textContent = 'Failed to start recording: ' + err.message;
+      log.appendChild(line);
+      btn.disabled = false;
+      btn.textContent = 'Start Recording';
+    }
+  }
+
+  // --- Load recordings list ---
+  async function loadRecordings() {
+    try {
+      const res = await fetch('/api/recordings');
+      const recordings = await res.json();
+      const list = document.getElementById('recordings-list');
+
+      if (recordings.length === 0) {
+        list.innerHTML = '<div style="color:#555;font-size:12px">No recordings yet</div>';
+        return;
+      }
+
+      list.innerHTML = recordings.map(r => `
+        <div class="recording-item ${r.id === selectedId ? 'selected' : ''}"
+             onclick="selectRecording('${r.id}')">
+          <div class="recording-item-content">
+            <div class="recording-id">${r.id}</div>
+            <div class="recording-meta">
+              ${r.queryCount} queries
+              ${r.trimCount ? ` &middot; ${r.trimCount} trim(s)` : ''}
+              <span class="recording-status status-${r.status}">${r.status}</span>
+            </div>
+          </div>
+          <button class="btn-delete" onclick="deleteRecording(event, '${r.id}')" title="Delete">&times;</button>
+        </div>
+      `).join('');
+    } catch (err) {
+      console.error('Failed to load recordings:', err);
+    }
+  }
+
+  // --- Delete recording ---
+  async function deleteRecording(event, id) {
+    event.stopPropagation();
+    if (!confirm('Delete this recording?')) return;
+
+    try {
+      await fetch(`/api/recordings/${id}`, { method: 'DELETE' });
+      removeRecordingState(id);
+      if (selectedId === id) {
+        selectedId = null;
+        activeVideo = null;
+        document.getElementById('detail-panel').innerHTML =
+          '<div class="empty-state">Select a recording</div>';
+      }
+      loadRecordings();
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    }
+  }
+
+  // --- Select and show recording detail ---
+  let activeVideo = null;
+  let cachedData = null; // cached recording data to avoid re-fetching on tab switch
+
+  async function selectRecording(id, switchToVideo) {
+    selectedId = id;
+    editCuts = []; // Reset edit bar for new recording
+    loadRecordings();
+
+    const panel = document.getElementById('detail-panel');
+
+    try {
+      // Re-fetch if switching recordings or forced refresh, otherwise use cache
+      if (!cachedData || cachedData.id !== id || !switchToVideo) {
+        panel.innerHTML = '<div class="empty-state">Loading...</div>';
+        const res = await fetch(`/api/recordings/${id}`);
+        cachedData = await res.json();
+      }
+
+      if (switchToVideo) {
+        activeVideo = switchToVideo;
+      } else {
+        const saved = getRecordingState(id);
+        const savedVideo = saved?.video;
+        if (savedVideo && cachedData.videos.find(v => v.file === savedVideo)) {
+          activeVideo = savedVideo;
+        } else {
+          activeVideo = 'raw.webm';
+        }
+      }
+
+      const savedSpeed = getRecordingState(id)?.speed || 1;
+      saveRecordingState(id, activeVideo, savedSpeed);
+
+      renderDetail(cachedData);
+
+      // Restore speed after render
+      const speedSelect = document.getElementById('play-speed');
+      const restoreSpeed = getRecordingState(id)?.speed || 1;
+      if (speedSelect) {
+        speedSelect.value = String(restoreSpeed);
+        setPlaySpeed(restoreSpeed);
+      }
+    } catch (err) {
+      panel.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
+    }
+  }
+
+  // Force re-fetch from server (after detect, trim, speed render)
+  async function refreshRecording(id, switchToVideo) {
+    cachedData = null;
+    await selectRecording(id, switchToVideo);
+  }
+
+  // --- Render detail panel ---
+  const ACTION_COLORS = {
+    'page-load': '#f59e0b',
+    'open-widget': '#8b5cf6',
+    'zoom-in': '#06b6d4',
+    'zoom-out': '#06b6d4',
+  };
+
+  function getActionColor(action) {
+    if (ACTION_COLORS[action]) return ACTION_COLORS[action];
+    if (action.startsWith('query-')) {
+      const hues = ['#ec4899', '#6366f1', '#22c55e', '#f97316', '#14b8a6'];
+      const idx = parseInt(action.split('-')[1]) - 1;
+      return hues[idx % hues.length];
+    }
+    return '#666';
+  }
+
+  function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    const f = Math.floor((seconds % 1) * 30); // frames at 30fps
+    return `${m}:${String(s).padStart(2, '0')}:${String(f).padStart(2, '0')}`;
+  }
+
+  function videoLabel(file) {
+    if (file === 'raw.webm') return 'Raw';
+    const tm = file.match(/^trimmed-(\d+)\.webm$/);
+    if (tm) return `Trimmed ${tm[1]}`;
+    const sm = file.match(/speed-([\w.]+)\.webm$/);
+    if (sm) return `Speed ${sm[1]}`;
+    return file.replace('.webm', '');
+  }
+
+  function renderDetail(data) {
+    const panel = document.getElementById('detail-panel');
+    const { id, videos } = data;
+    const currentVideo = videos.find(v => v.file === activeVideo);
+
+    // Use per-video timeline (each video has its own adjusted timeline)
+    const timeline = currentVideo?.timeline || data.timeline || [];
+
+    if (timeline.length === 0 && videos.length === 0) {
+      panel.innerHTML = '<div class="empty-state">Recording in progress...</div>';
+      return;
+    }
+
+    const totalDuration = timeline[timeline.length - 1]?.endTime ?? 0;
+    const freezes = currentVideo?.freezes ?? null;
+    const videoBase = activeVideo.replace('.webm', '');
+
+    let html = '';
+
+    // Video player with tabs
+    if (videos.length > 0) {
+      html += `<div class="detail-section">
+        <h3>Video</h3>
+        <div class="video-tabs">`;
+
+      for (const v of videos) {
+        const isActive = v.file === activeVideo;
+        const isRaw = v.file === 'raw.webm';
+        html += `<button class="video-tab ${isActive ? 'active' : ''}"
+          onclick="switchVideo('${id}', '${v.file}')">${videoLabel(v.file)}${!isRaw ? `<span class="video-tab-x" onclick="event.stopPropagation();deleteVideo('${id}','${v.file}')">&times;</span>` : ''}</button>`;
+      }
+
+      html += `</div>
+        <div class="video-container">
+          <video id="video-player"
+            src="/api/recordings/${id}/video/${activeVideo}"></video>
+        </div>
+        <div class="video-controls">
+          <button class="vc-btn" id="vc-play" onclick="togglePlay()">&#9654;</button>
+          <span class="vc-time" id="vc-current">0:00:00</span>
+          <input type="range" class="vc-seek" id="vc-seek" min="0" max="1000" value="0" oninput="seekVideo(this.value)">
+          <span class="vc-time" id="vc-duration">0:00:00</span>
+          <input type="range" class="vc-volume" id="vc-volume" min="0" max="100" value="100" oninput="setVolume(this.value)">
+        </div>
+      </div>`;
+    }
+
+    // Timeline (only for raw)
+    if (timeline.length > 0) {
+      html += `<div class="detail-section">
+        <h3 style="display:flex;align-items:center;gap:8px">
+          <span>Timeline (${formatTime(totalDuration)} total)</span>
+          <select id="play-speed" onchange="setPlaySpeed(this.value)" style="background:#222;border:1px solid #444;border-radius:4px;color:#ccc;font-size:11px;padding:2px 4px;cursor:pointer">
+            <option value="0.5">/2</option>
+            <option value="0.667">/1.5</option>
+            <option value="1" selected>x1</option>
+            <option value="1.5">x1.5</option>
+            <option value="2">x2</option>
+            <option value="2.5">x2.5</option>
+            <option value="3">x3</option>
+          </select>
+          <button class="btn-secondary" style="padding:2px 8px;font-size:11px" id="btn-wysiwyg"
+            onclick="saveWysiwyg('${id}', '${activeVideo}')" disabled>Save as WYSIWYG</button>
+          <span style="flex:1;text-align:center"><span id="timeline-current-time" style="font-family:monospace;color:#6366f1;font-size:13px"></span></span>
+        </h3>
+        <div class="timeline-bar-wrap" data-duration="${totalDuration}">
+          <div class="timeline-bar">`;
+
+      for (const entry of timeline) {
+        const pct = ((entry.endTime - entry.startTime) / totalDuration) * 100;
+        html += `<div class="timeline-segment" style="width:${pct}%;background:${getActionColor(entry.action)}"
+          title="${entry.label} (${formatTime(entry.startTime)} - ${formatTime(entry.endTime)})">
+          ${pct > 8 ? entry.action : ''}
+        </div>`;
+      }
+
+      html += `</div>`;
+
+      // Freeze timeline bar (below action bar)
+      if (freezes && freezes.length > 0) {
+        const frozenTotal = freezes.reduce((s, f) => s + f.duration, 0);
+        html += `<div style="margin-top:4px">
+          <div style="font-size:10px;color:#ef4444;font-weight:600;margin-bottom:3px">Frozen (${freezes.length} &middot; ${formatTime(frozenTotal)})</div>
+          <div style="height:12px;position:relative;border-radius:2px;background:#1a1a1a;overflow:hidden">`;
+        for (const f of freezes) {
+          const left = (f.start / totalDuration) * 100;
+          const width = Math.max(((f.end - f.start) / totalDuration) * 100, 0.3);
+          html += `<div style="position:absolute;left:${left}%;width:${width}%;height:100%;background:#ef4444;opacity:0.7"
+            title="Freeze ${formatTime(f.start)} - ${formatTime(f.end)} (${f.duration.toFixed(1)}s)"></div>`;
+        }
+        html += `</div></div>`; // close bar + outer div
+      }
+
+      // Editing bar
+      html += `<div style="margin-top:8px">
+        <div class="edit-bar-header">
+          <span style="font-size:10px;color:#888;font-weight:600">Edit</span>
+          <div class="edit-mode-toggle">
+            <button id="edit-mode-keep" class="active-keep" onclick="setEditMode('keep')">Keep</button>
+            <button id="edit-mode-cut" onclick="setEditMode('cut')">Cut</button>
+          </div>
+          <button class="btn-secondary" style="padding:1px 8px;font-size:10px;margin-left:auto" onclick="resetEditSegments()">Reset</button>
+        </div>
+        <div class="edit-bar" id="edit-bar" data-duration="${totalDuration}"></div>
+        <div class="edit-summary-bar" id="edit-summary-bar"></div>
+        <div style="margin-top:6px">
+          <button class="btn-primary" style="padding:6px 14px;font-size:12px;width:auto" id="btn-edit-trim"
+            onclick="trimFromEditBar('${id}', '${activeVideo}')">Generate Trimmed Video from Edit</button>
+          <div id="edit-trim-progress" style="display:none;margin-top:8px">
+            <div class="progress-log" id="edit-trim-log"></div>
+          </div>
+        </div>
+      </div>`;
+
+      html += `<div class="timeline-playhead" id="timeline-playhead"></div>
+        </div></div>`;
+    }
+
+    // Freeze detection status + re-detect
+    html += `<div class="detail-section">
+      <div style="display:flex;align-items:center;gap:8px">
+        <h3 style="margin:0">Freeze Detection</h3>
+        <button class="btn-secondary" data-detect-btn style="padding:2px 8px;font-size:10px" onclick="detectFreezes('${id}', '${activeVideo}')">Re-detect</button>
+      </div>`;
+
+    if (!freezes) {
+      html += `<p style="color:#888;font-size:12px;margin-top:6px" id="auto-detect-msg">Auto-detecting freezes...</p>`;
+    } else if (freezes.length === 0) {
+      html += `<p style="color:#888;font-size:12px;margin-top:6px">No freezes detected.</p>`;
+    } else {
+      html += `<p style="color:#888;font-size:12px;margin-top:6px">${freezes.length} freeze(s) detected — auto-added to edit bar as cuts.</p>`;
+    }
+
+    // Events detail (collapsible)
+    if (timeline.length > 0) {
+      html += `<div style="margin-top:8px">
+        <button class="btn-secondary" id="btn-toggle-detail" style="padding:4px 10px;font-size:11px" onclick="toggleEventsDetail()">
+          Show Events Detail</button>
+      </div>
+      <div id="events-detail" style="display:none;margin-top:8px">
+        <table class="freeze-table">
+          <thead>
+            <tr>
+              <th>Action</th>
+              <th>Label</th>
+              <th>Start</th>
+              <th>End</th>
+              <th>Duration</th>
+            </tr>
+          </thead>
+          <tbody>`;
+
+      for (const entry of timeline) {
+        const dur = entry.endTime - entry.startTime;
+        html += `<tr>
+          <td><span style="color:${getActionColor(entry.action)}">${entry.action}</span></td>
+          <td style="font-size:11px;color:#aaa;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${entry.label}</td>
+          <td>${formatTime(entry.startTime)}</td>
+          <td>${formatTime(entry.endTime)}</td>
+          <td>${dur.toFixed(2)}s</td>
+        </tr>`;
+      }
+
+      html += `</tbody></table></div>`;
+    }
+
+    html += '</div>';
+    panel.innerHTML = html;
+    // Auto-populate edit bar with detected freezes
+    if (freezes && freezes.length > 0 && editCuts.length === 0) {
+      for (const f of freezes) {
+        editCuts.push({ start: f.start, end: f.end });
+      }
+      // Merge overlapping
+      editCuts.sort((a, b) => a.start - b.start);
+      const merged = [];
+      for (const c of editCuts) {
+        const last = merged[merged.length - 1];
+        if (last && c.start <= last.end) { last.end = Math.max(last.end, c.end); }
+        else { merged.push({ ...c }); }
+      }
+      editCuts = merged;
+    }
+
+    setTimeout(() => {
+      setupVideoControls();
+      setupPlayhead();
+      setupEditBar(totalDuration);
+
+      // Auto-detect if no freezes yet
+      if (!freezes) {
+        detectFreezes(id, activeVideo);
+      }
+    }, 50);
+  }
+
+  async function deleteVideo(id, file) {
+    if (!confirm(`Delete ${videoLabel(file)}?`)) return;
+    try {
+      await fetch(`/api/recordings/${id}/video/${file}`, { method: 'DELETE' });
+      if (activeVideo === file) activeVideo = 'raw.webm';
+      loadRecordings();
+      await refreshRecording(id, activeVideo);
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    }
+  }
+
+  function switchVideo(id, file) {
+    activeVideo = file;
+    editCuts = []; // Reset edit bar for new video
+    const speed = getRecordingState(id)?.speed || 1;
+    saveRecordingState(id, file, speed);
+
+    // Re-render from cache without re-fetching
+    if (cachedData && cachedData.id === id) {
+      renderDetail(cachedData);
+      const speedSelect = document.getElementById('play-speed');
+      if (speedSelect) {
+        speedSelect.value = String(speed);
+        setPlaySpeed(speed);
+      }
+    } else {
+      selectRecording(id, file);
+    }
+  }
+
+  function toggleEventsDetail() {
+    const el = document.getElementById('events-detail');
+    const btn = document.getElementById('btn-toggle-detail');
+    if (el.style.display === 'none') {
+      el.style.display = '';
+      btn.textContent = 'Hide Events Detail';
+    } else {
+      el.style.display = 'none';
+      btn.textContent = 'Show Events Detail';
+    }
+  }
+
+
+  // --- Detect freezes ---
+  async function detectFreezes(id, video, e) {
+    // Disable all detect/re-detect buttons and show feedback
+    const buttons = document.querySelectorAll('[data-detect-btn]');
+    buttons.forEach(b => { b.disabled = true; b.dataset.origText = b.textContent; b.textContent = 'Detecting...'; });
+    // Also handle the initial detect button
+    const initBtn = document.getElementById('btn-detect');
+    if (initBtn) { initBtn.disabled = true; initBtn.textContent = 'Detecting...'; }
+
+    try {
+      const res = await fetch(`/api/recordings/${id}/detect-freezes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Detection failed');
+      }
+      await refreshRecording(id, video);
+    } catch (err) {
+      alert('Freeze detection failed: ' + err.message);
+      buttons.forEach(b => { b.disabled = false; b.textContent = b.dataset.origText || 'Re-detect'; });
+      if (initBtn) { initBtn.disabled = false; initBtn.textContent = 'Detect Freezes'; }
+    }
+  }
+
+  // --- Thumbnail hover popup ---
+  const popup = document.createElement('img');
+  popup.className = 'freeze-thumb-popup';
+  document.body.appendChild(popup);
+
+  function showThumbPopup(e) {
+    popup.src = e.target.src;
+    popup.style.display = 'block';
+    moveThumbPopup(e);
+  }
+
+  function moveThumbPopup(e) {
+    const pad = 16;
+    const pw = Math.min(popup.naturalWidth || 640, 640);
+    const ratio = (popup.naturalHeight || 360) / (popup.naturalWidth || 640);
+    const ph = pw * ratio;
+    let x = e.clientX + pad;
+    let y = e.clientY + pad;
+    if (x + pw > window.innerWidth) x = e.clientX - pw - pad;
+    if (y + ph > window.innerHeight) y = e.clientY - ph - pad;
+    popup.style.left = x + 'px';
+    popup.style.top = y + 'px';
+  }
+
+  function hideThumbPopup() {
+    popup.style.display = 'none';
+  }
+
+  // --- Play speed ---
+  function isSpeedVideo(file) {
+    return file && file.includes('-speed-');
+  }
+
+  function setPlaySpeed(rate) {
+    const video = document.getElementById('video-player');
+    if (video) video.playbackRate = parseFloat(rate);
+    if (selectedId) {
+      saveRecordingState(selectedId, activeVideo, parseFloat(rate));
+    }
+    updateWysiwygButton();
+  }
+
+  function updateWysiwygButton() {
+    const btn = document.getElementById('btn-wysiwyg');
+    if (!btn) return;
+    const speed = parseFloat(document.getElementById('play-speed')?.value || '1');
+    btn.disabled = speed === 1 || isSpeedVideo(activeVideo);
+  }
+
+  async function saveWysiwyg(id, video) {
+    const speed = parseFloat(document.getElementById('play-speed').value);
+    const label = speed < 1 ? `/${(1/speed).toFixed(1)}` : `x${speed}`;
+    if (!confirm(`Save ${videoLabel(video)} at ${label} speed as a new video?`)) return;
+
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Rendering...';
+
+    try {
+      const res = await fetch(`/api/recordings/${id}/speed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video, speed }),
+      });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const evt = JSON.parse(line.slice(6));
+          if (evt.type === 'done') {
+            btn.textContent = 'Save as WYSIWYG';
+            btn.disabled = false;
+            loadRecordings();
+            activeVideo = null;
+            await refreshRecording(id);
+            return;
+          }
+          if (evt.type === 'error') {
+            alert('Speed render failed: ' + evt.message);
+            btn.textContent = 'Save as WYSIWYG';
+            btn.disabled = false;
+            return;
+          }
+          btn.textContent = evt.message;
+        }
+      }
+    } catch (err) {
+      alert('Speed render failed: ' + err.message);
+      btn.textContent = 'Save as WYSIWYG';
+      btn.disabled = false;
+    }
+  }
+
+  // --- Video controls ---
+  function togglePlay() {
+    const video = document.getElementById('video-player');
+    if (!video) return;
+    if (video.paused) { video.play(); } else { video.pause(); }
+  }
+
+  function seekVideo(val) {
+    const video = document.getElementById('video-player');
+    if (!video || !video.duration) return;
+    video.currentTime = (val / 1000) * video.duration;
+  }
+
+  function setVolume(val) {
+    const video = document.getElementById('video-player');
+    if (!video) return;
+    video.volume = val / 100;
+  }
+
+  function setupVideoControls() {
+    const video = document.getElementById('video-player');
+    const playBtn = document.getElementById('vc-play');
+    const seekBar = document.getElementById('vc-seek');
+    const curTime = document.getElementById('vc-current');
+    const durTime = document.getElementById('vc-duration');
+    if (!video || !playBtn) return;
+
+    video.addEventListener('play', () => { playBtn.innerHTML = '&#9646;&#9646;'; });
+    video.addEventListener('pause', () => { playBtn.innerHTML = '&#9654;'; });
+    video.addEventListener('ended', () => { playBtn.innerHTML = '&#9654;'; });
+
+    video.addEventListener('loadedmetadata', () => {
+      if (durTime) durTime.textContent = formatTime(video.duration);
+    });
+
+    video.addEventListener('timeupdate', () => {
+      if (curTime) curTime.textContent = formatTime(video.currentTime);
+      if (seekBar && video.duration) {
+        seekBar.value = Math.round((video.currentTime / video.duration) * 1000);
+      }
+    });
+  }
+
+  // --- Edit bar ---
+  let editCuts = []; // [{start, end}] — cut ranges
+  let editMode = 'keep';
+
+  async function trimFromEditBar(id, video) {
+    if (editCuts.length === 0) {
+      alert('No cut regions marked. Use the edit bar to mark regions to cut.');
+      return;
+    }
+    const totalCut = editCuts.reduce((s, c) => s + (c.end - c.start), 0);
+    if (!confirm(`Cut ${editCuts.length} region(s) (${totalCut.toFixed(1)}s) from ${videoLabel(video)}?`)) return;
+
+    const btn = document.getElementById('btn-edit-trim');
+    const progressDiv = document.getElementById('edit-trim-progress');
+    const log = document.getElementById('edit-trim-log');
+    btn.disabled = true;
+    btn.textContent = 'Trimming...';
+    progressDiv.style.display = 'block';
+    log.innerHTML = '';
+
+    const addLog = (msg, cls) => {
+      const line = document.createElement('div');
+      line.className = 'log-line ' + (cls || '');
+      line.textContent = msg;
+      log.appendChild(line);
+      log.scrollTop = log.scrollHeight;
+    };
+
+    try {
+      const res = await fetch(`/api/recordings/${id}/trim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cutRanges: editCuts, video }),
+      });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const evt = JSON.parse(line.slice(6));
+          addLog(evt.message, evt.type);
+
+          if (evt.type === 'done') {
+            btn.textContent = 'Generate Trimmed Video from Edit';
+            btn.disabled = false;
+            editCuts = [];
+            loadRecordings();
+            activeVideo = null;
+            await refreshRecording(id);
+            return;
+          }
+          if (evt.type === 'error') {
+            btn.textContent = 'Generate Trimmed Video from Edit';
+            btn.disabled = false;
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      addLog('Trim failed: ' + err.message, 'error');
+      btn.textContent = 'Generate Trimmed Video from Edit';
+      btn.disabled = false;
+    }
+  }
+
+  function setEditMode(mode) {
+    editMode = mode;
+    const keepBtn = document.getElementById('edit-mode-keep');
+    const cutBtn = document.getElementById('edit-mode-cut');
+    if (keepBtn && cutBtn) {
+      keepBtn.className = mode === 'keep' ? 'active-keep' : '';
+      cutBtn.className = mode === 'cut' ? 'active-cut' : '';
+    }
+  }
+
+  function resetEditSegments() {
+    editCuts = [];
+    renderEditBar();
+  }
+
+
+  function applyEditRegion(start, end, mode) {
+    if (start > end) { const t = start; start = end; end = t; }
+    if (end - start < 0.05) return; // too small
+
+    if (mode === 'cut') {
+      // Add cut region, then merge overlaps
+      editCuts.push({ start, end });
+      editCuts.sort((a, b) => a.start - b.start);
+      // Merge overlapping
+      const merged = [];
+      for (const c of editCuts) {
+        const last = merged[merged.length - 1];
+        if (last && c.start <= last.end) {
+          last.end = Math.max(last.end, c.end);
+        } else {
+          merged.push({ ...c });
+        }
+      }
+      editCuts = merged;
+    } else {
+      // Keep mode: remove cut regions in this range
+      const result = [];
+      for (const c of editCuts) {
+        if (c.end <= start || c.start >= end) {
+          result.push(c);
+        } else {
+          // Partial overlaps — keep the non-overlapping parts
+          if (c.start < start) result.push({ start: c.start, end: start });
+          if (c.end > end) result.push({ start: end, end: c.end });
+        }
+      }
+      editCuts = result;
+    }
+    renderEditBar();
+  }
+
+  function renderEditBar() {
+    const bar = document.getElementById('edit-bar');
+    const summary = document.getElementById('edit-summary-bar');
+    if (!bar || !summary) return;
+    const dur = parseFloat(bar.dataset.duration) || 1;
+
+    // Edit bar: show keep (green) and cut (red) regions
+    const existingRegions = bar.querySelectorAll('.cut-region,.keep-region');
+    existingRegions.forEach(el => el.remove());
+
+    // Build segments for edit bar too
+    let eCursor = 0;
+    const editSegs = [];
+    for (const c of editCuts) {
+      if (c.start > eCursor) editSegs.push({ start: eCursor, end: c.start, type: 'keep' });
+      editSegs.push({ start: c.start, end: c.end, type: 'cut' });
+      eCursor = c.end;
+    }
+    if (eCursor < dur) editSegs.push({ start: eCursor, end: dur, type: 'keep' });
+
+    for (const seg of editSegs) {
+      const div = document.createElement('div');
+      div.className = seg.type === 'keep' ? 'keep-region' : 'cut-region';
+      div.style.left = (seg.start / dur * 100) + '%';
+      div.style.width = ((seg.end - seg.start) / dur * 100) + '%';
+      div.title = `${seg.type === 'keep' ? 'Keep' : 'Cut'} ${formatTime(seg.start)} - ${formatTime(seg.end)}`;
+      bar.appendChild(div);
+    }
+
+    // Summary bar: alternating keep/cut segments
+    summary.innerHTML = '';
+    let cursor = 0;
+    const segments = [];
+    for (const c of editCuts) {
+      if (c.start > cursor) segments.push({ start: cursor, end: c.start, type: 'keep' });
+      segments.push({ start: c.start, end: c.end, type: 'cut' });
+      cursor = c.end;
+    }
+    if (cursor < dur) segments.push({ start: cursor, end: dur, type: 'keep' });
+
+    for (const seg of segments) {
+      const div = document.createElement('div');
+      div.className = seg.type === 'keep' ? 'seg-keep' : 'seg-cut';
+      div.style.left = (seg.start / dur * 100) + '%';
+      div.style.width = ((seg.end - seg.start) / dur * 100) + '%';
+      div.title = `${seg.type === 'keep' ? 'Keep' : 'Cut'} ${formatTime(seg.start)} - ${formatTime(seg.end)}`;
+      div.dataset.start = seg.start;
+      div.dataset.end = seg.end;
+      div.dataset.type = seg.type;
+      summary.appendChild(div);
+    }
+  }
+
+  function setupEditBar(totalDuration) {
+    const bar = document.getElementById('edit-bar');
+    if (!bar) return;
+    const dur = totalDuration || 1;
+
+    let dragging = false;
+    let dragStart = 0;
+    let preview = null;
+
+    bar.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const rect = bar.getBoundingClientRect();
+      dragStart = ((e.clientX - rect.left) / rect.width) * dur;
+      dragging = true;
+
+      preview = document.createElement('div');
+      preview.className = 'drag-preview';
+      preview.style.background = editMode === 'cut' ? '#ef4444' : '#22c55e';
+      bar.appendChild(preview);
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!dragging || !preview) return;
+      const rect = bar.getBoundingClientRect();
+      const current = Math.max(0, Math.min(dur, ((e.clientX - rect.left) / rect.width) * dur));
+      const left = Math.min(dragStart, current);
+      const right = Math.max(dragStart, current);
+      preview.style.left = (left / dur * 100) + '%';
+      preview.style.width = ((right - left) / dur * 100) + '%';
+    });
+
+    document.addEventListener('mouseup', (e) => {
+      if (!dragging) return;
+      dragging = false;
+      if (preview) { preview.remove(); preview = null; }
+      const rect = bar.getBoundingClientRect();
+      const dragEnd = Math.max(0, Math.min(dur, ((e.clientX - rect.left) / rect.width) * dur));
+      applyEditRegion(dragStart, dragEnd, editMode);
+    });
+
+    // Summary bar: double-click to toggle segment
+    const summary = document.getElementById('edit-summary-bar');
+    if (summary) {
+      summary.addEventListener('dblclick', (e) => {
+        const seg = e.target.closest('[data-type]');
+        if (!seg) return;
+        const start = parseFloat(seg.dataset.start);
+        const end = parseFloat(seg.dataset.end);
+        const type = seg.dataset.type;
+        // Toggle: if it's keep, make it cut; if cut, make it keep
+        applyEditRegion(start, end, type === 'keep' ? 'cut' : 'keep');
+      });
+    }
+
+    renderEditBar();
+  }
+
+  // --- Timeline playhead sync ---
+  function setupPlayhead() {
+    const video = document.getElementById('video-player');
+    const playhead = document.getElementById('timeline-playhead');
+    const wrap = document.querySelector('.timeline-bar-wrap');
+    const timeDisplay = document.getElementById('timeline-current-time');
+    if (!video || !playhead || !wrap) return;
+
+    const timelineDuration = parseFloat(wrap.dataset.duration) || 1;
+    let rafId = null;
+
+    function updatePlayhead() {
+      const dur = timelineDuration || video.duration || 1;
+      const pct = (video.currentTime / dur) * 100;
+      playhead.style.left = Math.min(pct, 100) + '%';
+      playhead.style.display = 'block';
+      if (timeDisplay) timeDisplay.textContent = formatTime(video.currentTime);
+    }
+
+    function tick() {
+      updatePlayhead();
+      if (!video.paused && !video.ended) {
+        rafId = requestAnimationFrame(tick);
+      }
+    }
+
+    video.addEventListener('play', () => {
+      playhead.style.display = 'block';
+      tick();
+    });
+    video.addEventListener('pause', () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      updatePlayhead();
+    });
+    video.addEventListener('seeked', updatePlayhead);
+    video.addEventListener('ended', () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      playhead.style.display = 'none';
+      if (timeDisplay) timeDisplay.textContent = '';
+    });
+
+    // Click to seek
+    wrap.addEventListener('click', (e) => {
+      const rect = wrap.getBoundingClientRect();
+      const pct = (e.clientX - rect.left) / rect.width;
+      const dur = timelineDuration || video.duration || 1;
+      video.currentTime = pct * dur;
+      updatePlayhead();
+    });
+  }
+
+  // --- Initial load ---
+  restoreFormState();
+
+  // Save form state on changes
+  document.getElementById('rec-url').addEventListener('input', saveFormState);
+  document.getElementById('rec-headed').addEventListener('change', saveFormState);
+  document.getElementById('query-list').addEventListener('input', saveFormState);
+
+  loadRecordings().then(() => {
+    const lastId = getLastSelected();
+    if (lastId) selectRecording(lastId);
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "first-impression",
+  "description": "Prepare polished first impression demo packages for target prospects",
+  "private": true,
+  "scripts": {
+    "record": "tsx record.ts",
+    "studio": "tsx --watch server.ts",
+    "lint": "npx @biomejs/biome check --write .",
+    "typecheck": "npx tsc --noEmit",
+    "test": "npm run lint && npm run typecheck"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "playwright": "^1.52.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0"
+  }
+}
