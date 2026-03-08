@@ -236,6 +236,7 @@ export interface PublishResult {
 	businessName: string;
 	assistantName: string;
 	website: string | null;
+	publishedId?: number;
 }
 
 // ─── Orchestration functions ─────────────────────────────────────────
@@ -731,11 +732,19 @@ export async function publishRecording(
 	const tenantInfo = await fetchTenantInfo(tenantId);
 	const tenantSlug = tenantSlugFromInfo(tenantInfo, tenantId);
 
+	// Read recording config for reproduction tracking
+	const configPath = path.join(dir, "config.json");
+	const config = fs.existsSync(configPath)
+		? JSON.parse(fs.readFileSync(configPath, "utf-8"))
+		: undefined;
+
 	const result = await publishDemo({
 		tenantInfo,
 		tenantSlug,
 		videoPath,
+		videoFile: bestVideo,
 		snapshotPath: fs.existsSync(snapshotPath) ? snapshotPath : undefined,
+		config,
 	});
 
 	return {
@@ -747,5 +756,6 @@ export async function publishRecording(
 		assistantName:
 			tenantInfo.setup.assistantName || tenantInfo.app.title || "AI Assistant",
 		website: tenantInfo.setup.website || tenantInfo.app.homePageUrl || null,
+		publishedId: result.publishedId,
 	};
 }

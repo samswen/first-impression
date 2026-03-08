@@ -14,11 +14,14 @@ export interface PublishOptions {
 	tenantInfo: TenantInfo;
 	tenantSlug: string;
 	videoPath: string; // absolute path to the video file on disk
+	videoFile: string; // filename e.g. "final.webm"
 	snapshotPath?: string; // absolute path to snapshot.png (optional)
+	config?: Record<string, unknown>; // recording inputs for reproduction
 }
 
 export interface PublishResult {
 	url: string;
+	publishedId?: number;
 }
 
 interface PresignedUpload {
@@ -29,14 +32,24 @@ interface PresignedUpload {
 /**
  * Request presigned S3 upload URLs from the rag-chatbot API.
  */
-async function getPresignedUrls(
-	tenantId: number,
-	slug: string,
-	files: { name: string; contentType: string }[],
-): Promise<{
+interface PublishApiRequest {
+	slug: string;
+	files: { name: string; contentType: string }[];
+	videoFile?: string;
+	config?: Record<string, unknown>;
+	tenantSnapshot?: Record<string, unknown>;
+}
+
+interface PublishApiResponse {
 	uploads: Record<string, PresignedUpload>;
 	baseUrl: string;
-}> {
+	publishedId?: number;
+}
+
+async function callPublishApi(
+	tenantId: number,
+	body: PublishApiRequest,
+): Promise<PublishApiResponse> {
 	const baseUrl = process.env.RAG_CHATBOT_BASE_URL;
 	const apiKey = process.env.FIRST_IMPRESSION_API_KEY;
 
@@ -50,12 +63,12 @@ async function getPresignedUrls(
 			Authorization: `Bearer ${apiKey}`,
 			"Content-Type": "application/json",
 		},
-		body: JSON.stringify({ slug, files }),
+		body: JSON.stringify(body),
 	});
 
 	if (!res.ok) {
-		const body = await res.text().catch(() => "");
-		throw new Error(`Publish API error ${res.status}: ${body}`);
+		const text = await res.text().catch(() => "");
+		throw new Error(`Publish API error ${res.status}: ${text}`);
 	}
 
 	return res.json();
@@ -91,7 +104,8 @@ async function uploadWithPresignedUrl(
 export async function publishDemo(
 	opts: PublishOptions,
 ): Promise<PublishResult> {
-	const { tenantInfo, tenantSlug, videoPath, snapshotPath } = opts;
+	const { tenantInfo, tenantSlug, videoPath, videoFile, snapshotPath, config } =
+		opts;
 
 	// Build file list for presigned URLs
 	const files: { name: string; contentType: string }[] = [
@@ -104,11 +118,16 @@ export async function publishDemo(
 		files.push({ name: "snapshot.png", contentType: "image/png" });
 	}
 
-	// Get presigned URLs
-	const { uploads, baseUrl } = await getPresignedUrls(
+	// Get presigned URLs + record the publish
+	const { uploads, baseUrl, publishedId } = await callPublishApi(
 		tenantInfo.tenantId,
-		tenantSlug,
-		files,
+		{
+			slug: tenantSlug,
+			files,
+			videoFile,
+			config,
+			tenantSnapshot: tenantInfo as unknown as Record<string, unknown>,
+		},
 	);
 
 	// Cache-bust: timestamp so CloudFront serves fresh content
@@ -141,6 +160,8 @@ export async function publishDemo(
 		snapshotFilename: hasSnapshot ? "snapshot.png" : undefined,
 		assetsBaseUrl,
 		tenantSlug,
+		publishedId: publishedId ?? undefined,
+		trackingUrl: process.env.FI_ACCESS_URL,
 	};
 	const html = generateDemoPage(pageOpts);
 
@@ -164,5 +185,5 @@ export async function publishDemo(
 
 	// Return public URL
 	const url = `${baseUrl}?${cacheBust}`;
-	return { url };
+	return { url, publishedId: publishedId ?? undefined };
 }

@@ -374,7 +374,9 @@ app.post("/api/recordings/:id/preview", async (req, res) => {
 
 	try {
 		const bestVideo = pickBestVideo(dir);
-		const videoUrl = `http://localhost:${PORT}/api/recordings/${req.params.id}/video/${bestVideo}`;
+		const protocol = req.protocol;
+		const host = req.get("host") || `localhost:${PORT}`;
+		const videoUrl = `${protocol}://${host}/api/recordings/${req.params.id}/video/${bestVideo}`;
 		const html = await generatePreview(dir, Number(tenantId), videoUrl);
 		res.setHeader("Content-Type", "text/html; charset=utf-8");
 		res.send(html);
@@ -409,12 +411,14 @@ app.listen(PORT, () => {
 	const url = `http://localhost:${PORT}`;
 	console.log(`First Impression running at ${url}`);
 
-	// Auto-open browser
-	const cmd =
-		process.platform === "darwin"
-			? "open"
-			: process.platform === "win32"
-				? "start"
-				: "xdg-open";
-	exec(`${cmd} ${url}`);
+	// Auto-open browser (skip on headless/remote servers)
+	if (!process.env.NO_OPEN) {
+		const cmd =
+			process.platform === "darwin"
+				? "open"
+				: process.platform === "win32"
+					? "start"
+					: "xdg-open";
+		exec(`${cmd} ${url}`, () => {});
+	}
 });

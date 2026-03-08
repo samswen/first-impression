@@ -14,6 +14,8 @@ export interface DemoPageOptions {
 	snapshotFilename?: string; // e.g. "snapshot.png"
 	assetsBaseUrl: string; // e.g. "https://assets.xinfer.com"
 	tenantSlug: string; // used in URL path
+	publishedId?: number; // for access tracking pixel
+	trackingUrl?: string; // GCF endpoint for access tracking
 }
 
 export function generateDemoPage(opts: DemoPageOptions): string {
@@ -23,6 +25,8 @@ export function generateDemoPage(opts: DemoPageOptions): string {
 		snapshotFilename,
 		assetsBaseUrl,
 		tenantSlug,
+		publishedId,
+		trackingUrl,
 	} = opts;
 	const { setup, app } = tenantInfo;
 
@@ -599,6 +603,7 @@ export function generateDemoPage(opts: DemoPageOptions): string {
     </div>
   </footer>
 
+${publishedId && trackingUrl ? `<!-- Access tracking -->\n<img src="${esc(trackingUrl)}?pid=${publishedId}" width="1" height="1" alt="" style="position:absolute;left:-9999px" />` : ""}
 </body>
 </html>`;
 }
