@@ -38,7 +38,7 @@ export async function fetchTenantInfo(tenantId: number): Promise<TenantInfo> {
 		throw new Error("FIRST_IMPRESSION_API_KEY not configured in .env");
 	}
 
-	const url = `${baseUrl}/api/first-impression/${tenantId}`;
+	const url = `${baseUrl}/api/first-impression/t/${tenantId}`;
 	const res = await fetch(url, {
 		headers: { Authorization: `Bearer ${apiKey}` },
 	});

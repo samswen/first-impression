@@ -705,8 +705,7 @@ export async function generatePreview(
 ): Promise<string> {
 	const tenantInfo = await fetchTenantInfo(tenantId);
 	const tenantSlug = tenantSlugFromInfo(tenantInfo, tenantId);
-	const assetsBaseUrl =
-		process.env.ASSETS_BASE_URL || "https://assets.xinfer.ai";
+	const assetsBaseUrl = "https://assets.xinfer.ai";
 
 	return generateDemoPage({
 		tenantInfo,

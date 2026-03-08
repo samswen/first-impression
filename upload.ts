@@ -1,13 +1,12 @@
 /**
- * S3 Publisher
+ * S3 Publisher (via presigned URLs)
  *
- * Uploads a demo video, optional snapshot, and generated HTML page
- * to S3 under demo/[tenant-slug]/.
+ * Uploads demo assets to S3 by requesting presigned PUT URLs
+ * from the rag-chatbot API, then uploading directly.
  */
 
 import "dotenv/config";
 import fs from "node:fs";
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { type DemoPageOptions, generateDemoPage } from "./demo-page";
 import type { TenantInfo } from "./tenant";
 
@@ -22,121 +21,148 @@ export interface PublishResult {
 	url: string;
 }
 
-function getS3Client(): {
-	client: S3Client;
-	bucket: string;
-	assetsBaseUrl: string;
-} {
-	const region = process.env.AWS_REGION;
-	const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-	const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-	const bucket = process.env.S3_BUCKET;
-
-	if (!region || !accessKeyId || !secretAccessKey || !bucket) {
-		throw new Error(
-			"Missing AWS config. Set AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET in .env",
-		);
-	}
-
-	const assetsBaseUrl =
-		process.env.ASSETS_BASE_URL ||
-		`https://${bucket}.s3.${region}.amazonaws.com`;
-
-	const client = new S3Client({
-		region,
-		credentials: { accessKeyId, secretAccessKey },
-	});
-
-	return { client, bucket, assetsBaseUrl };
+interface PresignedUpload {
+	url: string;
+	publicUrl: string;
 }
 
-async function uploadFile(
-	client: S3Client,
-	bucket: string,
-	key: string,
+/**
+ * Request presigned S3 upload URLs from the rag-chatbot API.
+ */
+async function getPresignedUrls(
+	tenantId: number,
+	slug: string,
+	files: { name: string; contentType: string }[],
+): Promise<{
+	uploads: Record<string, PresignedUpload>;
+	baseUrl: string;
+}> {
+	const baseUrl = process.env.RAG_CHATBOT_BASE_URL;
+	const apiKey = process.env.FIRST_IMPRESSION_API_KEY;
+
+	if (!baseUrl) throw new Error("RAG_CHATBOT_BASE_URL not configured");
+	if (!apiKey) throw new Error("FIRST_IMPRESSION_API_KEY not configured");
+
+	const url = `${baseUrl}/api/first-impression/t/${tenantId}/publish`;
+	const res = await fetch(url, {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${apiKey}`,
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({ slug, files }),
+	});
+
+	if (!res.ok) {
+		const body = await res.text().catch(() => "");
+		throw new Error(`Publish API error ${res.status}: ${body}`);
+	}
+
+	return res.json();
+}
+
+/**
+ * Upload a file to S3 using a presigned PUT URL.
+ */
+async function uploadWithPresignedUrl(
+	presignedUrl: string,
 	body: Buffer | string,
 	contentType: string,
 	cacheControl = "public, max-age=31536000, immutable",
 ): Promise<void> {
-	await client.send(
-		new PutObjectCommand({
-			Bucket: bucket,
-			Key: key,
-			Body: body,
-			ContentType: contentType,
-			CacheControl: cacheControl,
-		}),
-	);
+	// Convert Buffer to Uint8Array for fetch compatibility
+	const fetchBody = Buffer.isBuffer(body) ? new Uint8Array(body) : body;
+
+	const res = await fetch(presignedUrl, {
+		method: "PUT",
+		headers: {
+			"Content-Type": contentType,
+			"Cache-Control": cacheControl,
+		},
+		body: fetchBody,
+	});
+
+	if (!res.ok) {
+		const text = await res.text().catch(() => "");
+		throw new Error(`S3 upload failed (${res.status}): ${text}`);
+	}
 }
 
 export async function publishDemo(
 	opts: PublishOptions,
 ): Promise<PublishResult> {
 	const { tenantInfo, tenantSlug, videoPath, snapshotPath } = opts;
-	const { client, bucket, assetsBaseUrl } = getS3Client();
 
-	const prefix = `demo/${tenantSlug}`;
+	// Build file list for presigned URLs
+	const files: { name: string; contentType: string }[] = [
+		{ name: "video.webm", contentType: "video/webm" },
+		{ name: "index.html", contentType: "text/html; charset=utf-8" },
+	];
 
-	// Cache-bust: use a timestamp so CloudFront serves fresh content on each publish
+	const hasSnapshot = snapshotPath && fs.existsSync(snapshotPath);
+	if (hasSnapshot) {
+		files.push({ name: "snapshot.png", contentType: "image/png" });
+	}
+
+	// Get presigned URLs
+	const { uploads, baseUrl } = await getPresignedUrls(
+		tenantInfo.tenantId,
+		tenantSlug,
+		files,
+	);
+
+	// Cache-bust: timestamp so CloudFront serves fresh content
 	const cacheBust = `v=${Date.now()}`;
 	const videoFilename = `video.webm?${cacheBust}`;
-	const videoKey = "video.webm";
-	const snapshotFilename = "snapshot.png";
 
 	// 1. Upload video (long cache — URL is cache-busted in HTML)
 	const videoBuffer = fs.readFileSync(videoPath);
-	await uploadFile(
-		client,
-		bucket,
-		`${prefix}/${videoKey}`,
+	await uploadWithPresignedUrl(
+		uploads["video.webm"].url,
 		videoBuffer,
 		"video/webm",
 	);
 
 	// 2. Upload snapshot if exists
-	let hasSnapshot = false;
-	if (snapshotPath && fs.existsSync(snapshotPath)) {
+	if (hasSnapshot) {
 		const snapBuffer = fs.readFileSync(snapshotPath);
-		await uploadFile(
-			client,
-			bucket,
-			`${prefix}/${snapshotFilename}`,
+		await uploadWithPresignedUrl(
+			uploads["snapshot.png"].url,
 			snapBuffer,
 			"image/png",
 		);
-		hasSnapshot = true;
 	}
 
-	// 3. Generate demo page HTML (with cache-busted video src)
+	// 3. Generate demo page HTML
+	const assetsBaseUrl = "https://assets.xinfer.ai";
 	const pageOpts: DemoPageOptions = {
 		tenantInfo,
 		videoFilename,
-		snapshotFilename: hasSnapshot ? snapshotFilename : undefined,
+		snapshotFilename: hasSnapshot ? "snapshot.png" : undefined,
 		assetsBaseUrl,
 		tenantSlug,
 	};
 	const html = generateDemoPage(pageOpts);
 
-	// 4. Upload index.html — no-cache so CloudFront always fetches fresh
-	const htmlCacheControl = "public, no-cache";
-	await uploadFile(
-		client,
-		bucket,
-		`${prefix}/index.html`,
+	// 4. Upload index.html (no-cache so CloudFront always fetches fresh)
+	await uploadWithPresignedUrl(
+		uploads["index.html"].url,
 		html,
 		"text/html; charset=utf-8",
-		htmlCacheControl,
-	);
-	await uploadFile(
-		client,
-		bucket,
-		prefix,
-		html,
-		"text/html; charset=utf-8",
-		htmlCacheControl,
+		"public, no-cache",
 	);
 
-	// 5. Return public URL (cache-busted so CloudFront serves fresh HTML)
-	const url = `${assetsBaseUrl}/demo/${tenantSlug}?${cacheBust}`;
+	// 5. Upload directory key (same HTML, for bare /demo/slug access)
+	if (uploads.__dir__) {
+		await uploadWithPresignedUrl(
+			uploads.__dir__.url,
+			html,
+			"text/html; charset=utf-8",
+			"public, no-cache",
+		);
+	}
+
+	// Return public URL
+	const url = `${baseUrl}?${cacheBust}`;
 	return { url };
 }
