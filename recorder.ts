@@ -17,6 +17,7 @@ export interface RecordingConfig {
 	queries: string[];
 	headed: boolean;
 	recordingDir?: string;
+	widgetUrl?: string;
 }
 
 export interface TimelineEntry {
@@ -72,7 +73,69 @@ export class Recorder {
 			);
 		fs.mkdirSync(dir, { recursive: true });
 
-		emit("progress", "Launching browser...");
+		// --- Prepare page content before recording starts ---
+		let navigateUrl: string;
+
+		if (this.config.widgetUrl) {
+			emit("progress", `Taking snapshot of ${this.config.url}...`);
+
+			// Use a separate browser for the snapshot (no recording)
+			const snapBrowser = await chromium.launch({ headless: true });
+			const snapContext = await snapBrowser.newContext({
+				viewport: { width: 1920, height: 1080 },
+				ignoreHTTPSErrors: true,
+			});
+			const snapPage = await snapContext.newPage();
+			await snapPage.goto(this.config.url, {
+				waitUntil: "load",
+				timeout: 60_000,
+			});
+			await snapPage.waitForTimeout(3000);
+
+			const snapshotPath = path.join(dir, "snapshot.png");
+			await snapPage.screenshot({
+				path: snapshotPath,
+				fullPage: false,
+			});
+			await snapContext.close();
+			await snapBrowser.close();
+
+			emit("progress", "Snapshot taken, building local page...");
+
+			// Read the screenshot as a data URI so the local HTML is self-contained
+			const imgBuffer = fs.readFileSync(snapshotPath);
+			const imgBase64 = imgBuffer.toString("base64");
+			const dataUri = `data:image/png;base64,${imgBase64}`;
+
+			// Build a local HTML page with the snapshot as background + widget script
+			const localHtml = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920">
+<style>
+* { margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; }
+body {
+  background: url("${dataUri}") no-repeat top left;
+  background-size: 1920px 1080px;
+}
+</style>
+</head>
+<body>
+<script src="${this.config.widgetUrl}" async></script>
+</body>
+</html>`;
+
+			const localPagePath = path.join(dir, "snapshot-page.html");
+			fs.writeFileSync(localPagePath, localHtml);
+			navigateUrl = `file://${localPagePath}`;
+		} else {
+			navigateUrl = this.config.url;
+		}
+
+		// --- Now launch the recording browser and navigate to the ready page ---
+		emit("progress", "Launching recording browser...");
 		const browser = await chromium.launch({
 			headless: !this.config.headed,
 		});
@@ -86,13 +149,11 @@ export class Recorder {
 		});
 
 		const page = await context.newPage();
-		this.recordingStart = Date.now();
 
 		try {
 			// --- Page load ---
-			const loadStart = this.now();
-			emit("action-start", `Navigating to ${this.config.url}`, "page-load");
-			await page.goto(this.config.url, {
+			emit("action-start", `Loading ${this.config.url}`, "page-load");
+			await page.goto(navigateUrl, {
 				waitUntil: "domcontentloaded",
 				timeout: 60_000,
 			});
@@ -101,12 +162,15 @@ export class Recorder {
 			await widget.waitFor({ state: "attached", timeout: 30_000 });
 			const toggle = widget.locator("button.xinfer-toggle");
 			await toggle.waitFor({ state: "visible", timeout: 10_000 });
+
+			// Start the timeline clock only after the page is visible with widget
+			this.recordingStart = Date.now();
 			await page.waitForTimeout(2000);
 
 			this.timeline.push({
 				action: "page-load",
 				label: this.config.url,
-				startTime: loadStart,
+				startTime: 0,
 				endTime: this.now(),
 			});
 			emit("action-end", "Page loaded", "page-load");

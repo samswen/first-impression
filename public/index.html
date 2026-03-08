@@ -658,6 +658,16 @@
       </div>
 
       <div class="field">
+        <label for="rec-widget-url">Widget URL <span style="color:#888;font-weight:normal;font-size:11px">(optional)</span></label>
+        <input type="url" id="rec-widget-url" placeholder="https://example.com/widget.js">
+      </div>
+
+      <div class="field">
+        <label for="rec-tenant-id">Tenant ID <span style="color:#888;font-weight:normal;font-size:11px">(for publishing)</span></label>
+        <input type="text" id="rec-tenant-id" placeholder="e.g. 42" inputmode="numeric">
+      </div>
+
+      <div class="field">
         <label>Queries</label>
         <div class="query-list" id="query-list">
           <div class="query-row">
@@ -686,7 +696,33 @@
         <span>Show browser (headed)</span>
       </label>
 
-      <button class="btn-primary" id="btn-record" onclick="startRecording()">Start Recording</button>
+      <button class="btn-primary" id="btn-record" onclick="startRecording()">Start New Recording</button>
+
+      <div style="margin-top:8px">
+        <button class="btn-secondary" style="width:100%" id="btn-make-speed" onclick="makeSpeedVideo()" disabled>Make x2 Speed Video</button>
+      </div>
+      <div id="speed-status" style="margin-top:4px;font-size:12px"></div>
+
+      <div style="margin-top:8px">
+        <button class="btn-secondary" style="width:100%" id="btn-intro-make" onclick="generateIntro()" disabled>Make Intro & Outro</button>
+      </div>
+      <div id="intro-status" style="margin-top:4px;font-size:12px"></div>
+
+      <div style="margin-top:8px">
+        <button class="btn-secondary" style="width:100%" id="btn-voiceover" onclick="addVoiceover()" disabled>Add Voice to Video</button>
+      </div>
+      <div id="voiceover-status" style="margin-top:4px;font-size:12px"></div>
+
+      <div style="margin-top:8px">
+        <button class="btn-secondary" style="width:100%" id="btn-compose" onclick="composeFinal()" disabled>Compose Final Video</button>
+      </div>
+      <div id="compose-status" style="margin-top:4px;font-size:12px"></div>
+
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn-secondary" style="flex:1" id="btn-preview" onclick="previewDemo()" disabled>Preview</button>
+        <button class="btn-secondary" style="flex:1" id="btn-publish" onclick="publishDemo()" disabled>Publish</button>
+      </div>
+      <div id="publish-status" style="margin-top:6px;font-size:12px"></div>
 
       <div class="progress-log" id="progress-log" style="display:none"></div>
 
@@ -745,6 +781,8 @@
     const state = loadState();
     state.form = {
       url: document.getElementById('rec-url').value,
+      widgetUrl: document.getElementById('rec-widget-url').value,
+      tenantId: document.getElementById('rec-tenant-id').value,
       queries: getQueries(),
       headed: document.getElementById('rec-headed').checked,
     };
@@ -754,8 +792,10 @@
   function restoreFormState() {
     const state = loadState();
     if (!state.form) return;
-    const { url, queries, headed } = state.form;
+    const { url, widgetUrl, tenantId, queries, headed } = state.form;
     if (url) document.getElementById('rec-url').value = url;
+    if (widgetUrl) document.getElementById('rec-widget-url').value = widgetUrl;
+    if (tenantId) document.getElementById('rec-tenant-id').value = tenantId;
     if (headed) document.getElementById('rec-headed').checked = headed;
     if (queries && queries.length > 0) {
       const list = document.getElementById('query-list');
@@ -801,6 +841,7 @@
   // --- Start recording ---
   async function startRecording() {
     const url = document.getElementById('rec-url').value.trim();
+    const widgetUrl = document.getElementById('rec-widget-url').value.trim();
     const queries = getQueries();
     const headed = document.getElementById('rec-headed').checked;
 
@@ -815,10 +856,12 @@
     log.innerHTML = '';
 
     try {
+      const body = { url, queries, headed };
+      if (widgetUrl) body.widgetUrl = widgetUrl;
       const res = await fetch('/api/recordings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, queries, headed }),
+        body: JSON.stringify(body),
       });
       const { id } = await res.json();
 
@@ -861,20 +904,22 @@
         return;
       }
 
-      list.innerHTML = recordings.map(r => `
+      list.innerHTML = recordings.map(r => {
+        const shortUrl = r.url ? r.url.replace(/^https?:\/\//, '').replace(/\/$/, '') : '';
+        return `
         <div class="recording-item ${r.id === selectedId ? 'selected' : ''}"
              onclick="selectRecording('${r.id}')">
           <div class="recording-item-content">
             <div class="recording-id">${r.id}</div>
             <div class="recording-meta">
-              ${r.queryCount} queries
+              ${shortUrl ? `${shortUrl} &middot; ` : ''}${r.queryCount} queries
               ${r.trimCount ? ` &middot; ${r.trimCount} trim(s)` : ''}
               <span class="recording-status status-${r.status}">${r.status}</span>
             </div>
           </div>
           <button class="btn-delete" onclick="deleteRecording(event, '${r.id}')" title="Delete">&times;</button>
-        </div>
-      `).join('');
+        </div>`;
+      }).join('');
     } catch (err) {
       console.error('Failed to load recordings:', err);
     }
@@ -893,6 +938,8 @@
         activeVideo = null;
         document.getElementById('detail-panel').innerHTML =
           '<div class="empty-state">Select a recording</div>';
+        speedExists = introExists = outroExists = voicedExists = finalExists = false;
+        updateActionButtons();
       }
       loadRecordings();
     } catch (err) {
@@ -907,6 +954,7 @@
   async function selectRecording(id, switchToVideo) {
     selectedId = id;
     editCuts = []; // Reset edit bar for new recording
+    checkVideoStates();
     loadRecordings();
 
     const panel = document.getElementById('detail-panel');
@@ -917,6 +965,25 @@
         panel.innerHTML = '<div class="empty-state">Loading...</div>';
         const res = await fetch(`/api/recordings/${id}`);
         cachedData = await res.json();
+      }
+
+      // Restore form fields from recording config
+      if (cachedData.config) {
+        const c = cachedData.config;
+        if (c.url) document.getElementById('rec-url').value = c.url;
+        document.getElementById('rec-widget-url').value = c.widgetUrl || '';
+        if (c.queries && c.queries.length > 0) {
+          const list = document.getElementById('query-list');
+          list.innerHTML = '';
+          for (const q of c.queries) {
+            const row = document.createElement('div');
+            row.className = 'query-row';
+            row.innerHTML = `<input type="text" value="${q.replace(/"/g, '&quot;')}">
+              <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>`;
+            list.appendChild(row);
+          }
+        }
+        saveFormState();
       }
 
       if (switchToVideo) {
@@ -1051,8 +1118,11 @@
           </select>
           <button class="btn-secondary" style="padding:2px 8px;font-size:11px" id="btn-wysiwyg"
             onclick="saveWysiwyg('${id}', '${activeVideo}')" disabled>Save as WYSIWYG</button>
+          <button class="btn-secondary" style="padding:2px 8px;font-size:11px" id="btn-toggle-timeline"
+            onclick="toggleTimelineBars()">Show</button>
           <span style="flex:1;text-align:center"><span id="timeline-current-time" style="font-family:monospace;color:#6366f1;font-size:13px"></span></span>
         </h3>
+        <div id="timeline-collapsible" style="display:none">
         <div class="timeline-bar-wrap" data-duration="${totalDuration}">
           <div class="timeline-bar">`;
 
@@ -1103,22 +1173,27 @@
       </div>`;
 
       html += `<div class="timeline-playhead" id="timeline-playhead"></div>
-        </div></div>`;
-    }
+        </div>`;
 
-    // Freeze detection status + re-detect
-    html += `<div class="detail-section">
-      <div style="display:flex;align-items:center;gap:8px">
-        <h3 style="margin:0">Freeze Detection</h3>
-        <button class="btn-secondary" data-detect-btn style="padding:2px 8px;font-size:10px" onclick="detectFreezes('${id}', '${activeVideo}')">Re-detect</button>
-      </div>`;
+      // Freeze detection status + re-detect (inside collapsible)
+      html += `<div id="freeze-detect-section" style="margin-top:12px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <h3 style="margin:0;font-size:13px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.3px">Freeze Detection</h3>
+          <button class="btn-secondary" data-detect-btn style="padding:2px 8px;font-size:10px" onclick="detectFreezes('${id}', '${activeVideo}')">Re-detect</button>
+        </div>`;
 
-    if (!freezes) {
-      html += `<p style="color:#888;font-size:12px;margin-top:6px" id="auto-detect-msg">Auto-detecting freezes...</p>`;
-    } else if (freezes.length === 0) {
-      html += `<p style="color:#888;font-size:12px;margin-top:6px">No freezes detected.</p>`;
-    } else {
-      html += `<p style="color:#888;font-size:12px;margin-top:6px">${freezes.length} freeze(s) detected — auto-added to edit bar as cuts.</p>`;
+      if (!freezes) {
+        html += `<p style="color:#888;font-size:12px;margin-top:6px" id="auto-detect-msg">Auto-detecting freezes...</p>`;
+      } else if (freezes.length === 0) {
+        html += `<p style="color:#888;font-size:12px;margin-top:6px">No freezes detected.</p>`;
+      } else {
+        html += `<p style="color:#888;font-size:12px;margin-top:6px">${freezes.length} freeze(s) detected — auto-added to edit bar as cuts.</p>`;
+      }
+
+      html += `</div>`;
+
+      html += `</div><!-- /timeline-collapsible -->
+        </div>`;
     }
 
     // Events detail (collapsible)
@@ -1154,7 +1229,8 @@
       html += `</tbody></table></div>`;
     }
 
-    html += '</div>';
+    // Publish section removed — now in left sidebar
+
     panel.innerHTML = html;
     // Auto-populate edit bar with detected freezes
     if (freezes && freezes.length > 0 && editCuts.length === 0) {
@@ -1212,6 +1288,19 @@
       }
     } else {
       selectRecording(id, file);
+    }
+  }
+
+  function toggleTimelineBars() {
+    const el = document.getElementById('timeline-collapsible');
+    const btn = document.getElementById('btn-toggle-timeline');
+    if (!el || !btn) return;
+    if (el.style.display === 'none') {
+      el.style.display = '';
+      btn.textContent = 'Hide';
+    } else {
+      el.style.display = 'none';
+      btn.textContent = 'Show';
     }
   }
 
@@ -1337,6 +1426,12 @@
           if (evt.type === 'done') {
             btn.textContent = 'Save as WYSIWYG';
             btn.disabled = false;
+            // Reset speed to x1 so the new video plays at normal rate
+            const speedSelect = document.getElementById('play-speed');
+            if (speedSelect) {
+              speedSelect.value = '1';
+              setPlaySpeed(1);
+            }
             loadRecordings();
             activeVideo = null;
             await refreshRecording(id);
@@ -1688,11 +1783,513 @@
     });
   }
 
+  // --- Preview demo ---
+  async function previewDemo() {
+    if (!selectedId) { alert('Select a recording first.'); return; }
+    const tenantId = document.getElementById('rec-tenant-id').value.trim();
+    if (!tenantId || isNaN(Number(tenantId))) {
+      alert('Enter a valid Tenant ID first.');
+      return;
+    }
+    const btn = document.getElementById('btn-preview');
+    btn.disabled = true;
+    btn.textContent = 'Loading...';
+    try {
+      const res = await fetch(`/api/recordings/${selectedId}/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId: Number(tenantId) }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Preview failed');
+      }
+      const html = await res.text();
+      const blob = new Blob([html], { type: 'text/html' });
+      const blobUrl = URL.createObjectURL(blob);
+
+      const panel = document.getElementById('detail-panel');
+      panel.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="selectRecording('${selectedId}')">Back to Recording</button>
+          <span style="color:#888;font-size:12px">Demo Page Preview</span>
+        </div>
+        <iframe src="${blobUrl}" style="width:100%;height:calc(100vh - 120px);border:1px solid #333;border-radius:6px;background:#fff"></iframe>`;
+    } catch (err) {
+      alert('Preview failed: ' + err.message);
+    } finally {
+      btn.textContent = 'Preview';
+      btn.disabled = false;
+    }
+  }
+
+  // --- Publish demo ---
+  async function publishDemo() {
+    if (!selectedId) { alert('Select a recording first.'); return; }
+    const tenantId = document.getElementById('rec-tenant-id').value.trim();
+    if (!tenantId || isNaN(Number(tenantId))) {
+      alert('Enter a valid Tenant ID first.');
+      return;
+    }
+
+    const btn = document.getElementById('btn-publish');
+    const status = document.getElementById('publish-status');
+    btn.disabled = true;
+    btn.textContent = 'Publishing...';
+    status.innerHTML = '<span style="color:#888">Uploading to S3...</span>';
+
+    try {
+      const res = await fetch(`/api/recordings/${selectedId}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId: Number(tenantId) }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Publish failed');
+      }
+
+      status.innerHTML = `<span style="color:#22c55e">Published!</span>
+        <a href="${data.url}" target="_blank" rel="noopener" style="color:#6366f1;margin-left:6px;word-break:break-all">${data.url}</a>
+        <span style="color:#666;margin-left:6px">(${data.video})</span>`;
+      btn.textContent = 'Publish';
+      btn.disabled = false;
+      composeOutreachLetters(data);
+    } catch (err) {
+      status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
+      btn.textContent = 'Publish';
+      btn.disabled = false;
+    }
+  }
+
+  // --- Outreach letter composer ---
+  let activeLetterTab = 'email';
+
+  function composeOutreachLetters(data) {
+    const { url, businessName, assistantName } = data;
+
+    const emailSubject = `Your Personalized AI Assistant Demo \u2014 ${businessName}`;
+    const emailBody = `Hi,
+
+I put together a personalized demo showing how an AI assistant can work on ${businessName}'s website \u2014 answering customer questions, guiding them through products, and driving conversions in real time.
+
+Take a look here: ${url}
+
+The demo was recorded live on your site, so you'll see exactly how ${assistantName} interacts with your customers and products.
+
+Would love to hear your thoughts \u2014 happy to walk you through it or answer any questions.
+
+Best,`;
+
+    const smsBody = `Hi! I made a quick AI assistant demo for ${businessName} \u2014 see it in action here: ${url}`;
+
+    activeLetterTab = 'email';
+    renderLetterComposer({ url, emailSubject, emailBody, smsBody });
+  }
+
+  function renderLetterComposer({ url, emailSubject, emailBody, smsBody }) {
+    const panel = document.getElementById('detail-panel');
+    const isEmail = activeLetterTab === 'email';
+
+    let html = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+        <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="selectRecording('${selectedId}')">Back to Recording</button>
+        <span style="color:#888;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Outreach Letter</span>
+      </div>
+
+      <div style="margin-bottom:16px;padding:10px 12px;background:#111;border:1px solid #333;border-radius:6px;display:flex;align-items:center;gap:8px">
+        <span style="color:#888;font-size:11px;font-weight:600;text-transform:uppercase;flex-shrink:0">Published URL</span>
+        <a href="${url}" target="_blank" rel="noopener" style="color:#6366f1;font-size:12px;word-break:break-all;flex:1">${url}</a>
+        <button class="btn-secondary" style="padding:2px 8px;font-size:10px;flex-shrink:0" onclick="copyText('${url}', this)">Copy URL</button>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="video-tab ${isEmail ? 'active' : ''}" onclick="switchLetterTab('email')">Email</button>
+        <button class="video-tab ${!isEmail ? 'active' : ''}" onclick="switchLetterTab('sms')">SMS</button>
+      </div>`;
+
+    if (isEmail) {
+      html += `
+        <div style="margin-bottom:8px;padding:8px 12px;background:#1a1a1a;border:1px solid #333;border-radius:6px;display:flex;align-items:center;gap:8px">
+          <span style="color:#888;font-size:11px;font-weight:600;flex-shrink:0">Subject</span>
+          <span style="color:#e0e0e0;font-size:13px;flex:1" id="email-subject">${escapeHtmlAttr(emailSubject)}</span>
+          <button class="btn-secondary" style="padding:2px 8px;font-size:10px;flex-shrink:0" onclick="copyText(document.getElementById('email-subject').textContent, this)">Copy</button>
+        </div>
+        <div style="position:relative">
+          <pre id="letter-body" style="background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:16px;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;line-height:1.7;white-space:pre-wrap;word-wrap:break-word;margin:0;min-height:200px">${escapeHtmlAttr(emailBody)}</pre>
+          <button class="btn-primary" style="position:absolute;bottom:12px;right:12px;width:auto;padding:6px 16px;font-size:12px" onclick="copyText(document.getElementById('letter-body').textContent, this)">Copy Body</button>
+        </div>`;
+    } else {
+      html += `
+        <div style="position:relative">
+          <pre id="letter-body" style="background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:16px;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;line-height:1.7;white-space:pre-wrap;word-wrap:break-word;margin:0;min-height:80px">${escapeHtmlAttr(smsBody)}</pre>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
+            <span style="color:#666;font-size:11px">${smsBody.length} characters</span>
+            <button class="btn-primary" style="width:auto;padding:6px 16px;font-size:12px" onclick="copyText(document.getElementById('letter-body').textContent, this)">Copy SMS</button>
+          </div>
+        </div>`;
+    }
+
+    panel.innerHTML = html;
+
+    // Stash data for tab switching
+    panel.dataset.letterData = JSON.stringify({ url, emailSubject, emailBody, smsBody });
+  }
+
+  function switchLetterTab(tab) {
+    activeLetterTab = tab;
+    const panel = document.getElementById('detail-panel');
+    try {
+      const data = JSON.parse(panel.dataset.letterData);
+      renderLetterComposer(data);
+    } catch {}
+  }
+
+  function copyText(text, btn) {
+    navigator.clipboard.writeText(text).then(() => {
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      btn.style.color = '#22c55e';
+      setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 1500);
+    });
+  }
+
+  function escapeHtmlAttr(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // --- Intro ---
+  let speedExists = false;
+  let introExists = false;
+  let outroExists = false;
+  let voicedExists = false;
+  let finalExists = false;
+
+  async function checkVideoStates() {
+    if (!selectedId) {
+      speedExists = introExists = outroExists = voicedExists = finalExists = false;
+      return;
+    }
+    const checks = ['intro.webm', 'outro.webm', 'final.webm'].map(async (f) => {
+      try {
+        const res = await fetch(`/api/recordings/${selectedId}/video/${f}`, { method: 'HEAD' });
+        return res.ok;
+      } catch { return false; }
+    });
+    // Check for speed and voiced videos in the recording data
+    const videoCheck = (async () => {
+      try {
+        const res = await fetch(`/api/recordings/${selectedId}`);
+        const data = await res.json();
+        const files = data.videos?.map(v => v.file) || [];
+        return {
+          speed: files.some(f => f.includes('-speed-')),
+          voiced: files.some(f => f.includes('-voiced')),
+        };
+      } catch { return { speed: false, voiced: false }; }
+    })();
+
+    const [intro, outro, final, { speed, voiced }] = await Promise.all([...checks, videoCheck]);
+    introExists = intro;
+    outroExists = outro;
+    finalExists = final;
+    speedExists = speed;
+    voicedExists = voiced;
+
+    updateActionButtons();
+  }
+
+
+
+  async function generateIntro() {
+    if (!selectedId) { alert('Select a recording first.'); return; }
+    const tenantId = document.getElementById('rec-tenant-id').value.trim();
+    if (!tenantId || isNaN(Number(tenantId))) {
+      alert('Enter a valid Tenant ID first.');
+      return;
+    }
+
+    const btn = document.getElementById('btn-intro-make');
+    const status = document.getElementById('intro-status');
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+    status.innerHTML = '<span style="color:#888">Creating intro scene...</span>';
+
+    try {
+      const res = await fetch(`/api/recordings/${selectedId}/intro`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId: Number(tenantId) }),
+      });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const evt = JSON.parse(line.slice(6));
+          status.innerHTML = `<span style="color:${evt.type === 'error' ? '#ef4444' : evt.type === 'done' ? '#22c55e' : '#888'}">${evt.message}</span>`;
+
+          if (evt.type === 'done') {
+            status.innerHTML = '<span style="color:#22c55e">Intro & Outro ready!</span>';
+            btn.textContent = 'Make Intro & Outro';
+            btn.disabled = false;
+            loadRecordings();
+            await refreshRecording(selectedId, 'intro.webm');
+            checkVideoStates();
+            return;
+          }
+          if (evt.type === 'error') {
+            btn.textContent = 'Make Intro & Outro';
+            btn.disabled = false;
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
+      btn.textContent = 'Make Intro';
+      btn.disabled = false;
+    }
+  }
+
+  // --- Make x2 speed video ---
+  async function makeSpeedVideo() {
+    if (!selectedId) { alert('Select a recording first.'); return; }
+
+    const btn = document.getElementById('btn-make-speed');
+    const status = document.getElementById('speed-status');
+    btn.disabled = true;
+    btn.textContent = 'Rendering...';
+    status.innerHTML = '<span style="color:#888">Creating x2 speed video...</span>';
+
+    try {
+      const res = await fetch(`/api/recordings/${selectedId}/speed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video: 'raw.webm', speed: 2 }),
+      });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const evt = JSON.parse(line.slice(6));
+          status.innerHTML = `<span style="color:${evt.type === 'error' ? '#ef4444' : evt.type === 'done' ? '#22c55e' : '#888'}">${evt.message}</span>`;
+
+          if (evt.type === 'done') {
+            btn.textContent = 'Make x2 Speed Video';
+            btn.disabled = false;
+            loadRecordings();
+            await refreshRecording(selectedId, 'raw-speed-2x.webm');
+            checkVideoStates();
+            return;
+          }
+          if (evt.type === 'error') {
+            btn.textContent = 'Make x2 Speed Video';
+            btn.disabled = false;
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
+      btn.textContent = 'Make x2 Speed Video';
+      btn.disabled = false;
+    }
+  }
+
+  // --- Compose final video ---
+  async function composeFinal() {
+    if (!selectedId) { alert('Select a recording first.'); return; }
+
+    const btn = document.getElementById('btn-compose');
+    const status = document.getElementById('compose-status');
+    btn.disabled = true;
+    btn.textContent = 'Composing...';
+    status.innerHTML = '<span style="color:#888">Concatenating intro + video + outro...</span>';
+
+    try {
+      const video = activeVideo || 'raw.webm';
+      const res = await fetch(`/api/recordings/${selectedId}/compose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video }),
+      });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const evt = JSON.parse(line.slice(6));
+          status.innerHTML = `<span style="color:${evt.type === 'error' ? '#ef4444' : evt.type === 'done' ? '#22c55e' : '#888'}">${evt.message}</span>`;
+
+          if (evt.type === 'done') {
+            btn.textContent = 'Compose Final Video';
+            btn.disabled = false;
+            loadRecordings();
+            await refreshRecording(selectedId, 'final.webm');
+            checkVideoStates();
+            return;
+          }
+          if (evt.type === 'error') {
+            btn.textContent = 'Compose Final Video';
+            btn.disabled = false;
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
+      btn.textContent = 'Compose Final Video';
+      btn.disabled = false;
+    }
+  }
+
+  // --- Add voiceover ---
+  async function addVoiceover() {
+    if (!selectedId) { alert('Select a recording first.'); return; }
+    const tenantId = document.getElementById('rec-tenant-id').value.trim();
+    if (!tenantId || isNaN(Number(tenantId))) {
+      alert('Enter a valid Tenant ID first.');
+      return;
+    }
+
+    // Use the currently active video tab
+    const video = activeVideo || 'raw.webm';
+
+    const btn = document.getElementById('btn-voiceover');
+    const status = document.getElementById('voiceover-status');
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+    status.innerHTML = '<span style="color:#888">Adding voiceover...</span>';
+
+    try {
+      const res = await fetch(`/api/recordings/${selectedId}/voiceover`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId: Number(tenantId), video }),
+      });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const evt = JSON.parse(line.slice(6));
+          status.innerHTML = `<span style="color:${evt.type === 'error' ? '#ef4444' : evt.type === 'done' ? '#22c55e' : '#888'}">${evt.message}</span>`;
+
+          if (evt.type === 'done') {
+            btn.textContent = 'Add Voice to Video';
+            btn.disabled = false;
+            const voicedFile = video.replace('.webm', '-voiced.webm');
+            loadRecordings();
+            await refreshRecording(selectedId, voicedFile);
+            checkVideoStates();
+            return;
+          }
+          if (evt.type === 'error') {
+            btn.textContent = 'Add Voice to Video';
+            btn.disabled = false;
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
+      btn.textContent = 'Add Voice to Video';
+      btn.disabled = false;
+    }
+  }
+
+  function updateActionButtons() {
+    const speedBtn = document.getElementById('btn-make-speed');
+    const makeBtn = document.getElementById('btn-intro-make');
+    const voBtn = document.getElementById('btn-voiceover');
+    const compBtn = document.getElementById('btn-compose');
+    const previewBtn = document.getElementById('btn-preview');
+    const publishBtn = document.getElementById('btn-publish');
+    const hasRecording = !!selectedId;
+
+    // All action buttons need a recording selected
+    if (speedBtn) speedBtn.disabled = !hasRecording;
+    if (makeBtn) makeBtn.disabled = !hasRecording;
+    if (voBtn) voBtn.disabled = !hasRecording;
+
+    // Compose requires all three: intro, outro, voiced
+    if (compBtn) compBtn.disabled = !(introExists && outroExists && voicedExists);
+
+    // Preview and Publish require final video
+    if (previewBtn) previewBtn.disabled = !finalExists;
+    if (publishBtn) publishBtn.disabled = !finalExists;
+
+    // Highlight logic: only one secondary button gets highlighted (btn-primary style)
+    const actionBtns = [speedBtn, makeBtn, voBtn, compBtn];
+    for (const b of actionBtns) {
+      if (b) { b.className = 'btn-secondary'; }
+    }
+
+    let highlighted = null;
+    if (hasRecording) {
+      if (!speedExists) {
+        highlighted = speedBtn;
+      } else if (!introExists || !outroExists) {
+        highlighted = makeBtn;
+      } else if (!voicedExists) {
+        highlighted = voBtn;
+      } else if (!finalExists) {
+        highlighted = compBtn;
+      }
+    }
+
+    if (highlighted) {
+      highlighted.className = 'btn-primary';
+    }
+
+  }
+
   // --- Initial load ---
   restoreFormState();
 
   // Save form state on changes
   document.getElementById('rec-url').addEventListener('input', saveFormState);
+  document.getElementById('rec-widget-url').addEventListener('input', saveFormState);
+  document.getElementById('rec-tenant-id').addEventListener('input', saveFormState);
   document.getElementById('rec-headed').addEventListener('change', saveFormState);
   document.getElementById('query-list').addEventListener('input', saveFormState);
 
