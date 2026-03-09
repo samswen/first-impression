@@ -532,7 +532,7 @@ export function generateDemoPage(opts: DemoPageOptions): string {
       </div>
       <div class="yt-wrap">
         <iframe
-          src="https://www.youtube.com/embed/mK-ymnuvIEQ?autoplay=0&vq=hd1080"
+          src="https://www.youtube-nocookie.com/embed/mK-ymnuvIEQ?autoplay=0&vq=hd1080"
           title="Introducing XInfer.AI"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowfullscreen></iframe>
