@@ -46,19 +46,9 @@
 
     .panel:last-child { border-right: none; }
 
-    .panel-left { width: 420px; min-width: 420px; }
+    .panel-left { width: 560px; min-width: 560px; }
     .panel-right { flex: 1; }
 
-    .panel-header {
-      padding: 12px 16px;
-      background: #1a1a1a;
-      border-bottom: 1px solid #333;
-      font-weight: 600;
-      font-size: 13px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #888;
-    }
 
     .panel-body {
       flex: 1;
@@ -149,9 +139,55 @@
       display: flex;
       gap: 4px;
       align-items: center;
+      position: relative;
+    }
+
+    .query-row.dragging { opacity: 0.3; }
+
+    .query-row.drag-over {
+      border-top: 2px solid #6366f1;
+      margin-top: -2px;
     }
 
     .query-row input { flex: 1; }
+
+    .drag-handle {
+      cursor: grab;
+      color: #555;
+      font-size: 14px;
+      flex-shrink: 0;
+      user-select: none;
+      padding: 0 2px;
+    }
+
+    .drag-handle:hover { color: #888; }
+    .drag-handle:active { cursor: grabbing; }
+
+    .query-suggestions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 28px;
+      margin-left: 22px;
+      background: #222;
+      border: 1px solid #555;
+      border-radius: 4px;
+      max-height: 180px;
+      overflow-y: auto;
+      z-index: 100;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+
+    .query-suggestion-item {
+      padding: 6px 10px;
+      font-size: 12px;
+      color: #ccc;
+      cursor: pointer;
+      border-bottom: 1px solid #333;
+    }
+
+    .query-suggestion-item:last-child { border-bottom: none; }
+    .query-suggestion-item:hover { background: #333; color: #fff; }
 
     .btn-icon {
       width: 28px;
@@ -639,19 +675,232 @@
       color: #555;
       font-size: 14px;
     }
+
+    /* --- Voice clips --- */
+    .voice-clip-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 4px;
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+
+    .voice-clip-row:hover { border-color: #555; }
+
+    .voice-clip-badge {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 8px;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .badge-intro { background: #1a3a1a; color: #4ade80; }
+    .badge-main { background: #1a1a3a; color: #818cf8; }
+    .badge-outro { background: #3a1a1a; color: #f87171; }
+
+    .voice-clip-text {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #ccc;
+    }
+
+    .voice-clip-dur {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 10px;
+      color: #666;
+      flex-shrink: 0;
+    }
+
+    .voice-clip-btn {
+      width: 22px;
+      height: 22px;
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: #888;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      flex-shrink: 0;
+      padding: 0;
+    }
+
+    .voice-clip-btn:hover { color: #fff; border-color: #555; }
+    .voice-clip-btn.delete:hover { color: #ef4444; border-color: #ef4444; }
+
+    /* --- Login overlay --- */
+    .login-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    }
+
+    .login-box {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 40px;
+      width: 380px;
+      text-align: center;
+    }
+
+    .login-box h2 {
+      color: #fff;
+      font-size: 22px;
+      margin-bottom: 6px;
+    }
+
+    .login-box p {
+      color: #888;
+      font-size: 13px;
+      margin-bottom: 24px;
+    }
+
+    .login-box input[type="email"] {
+      width: 100%;
+      padding: 10px 12px;
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-size: 14px;
+      outline: none;
+      margin-bottom: 12px;
+    }
+
+    .login-box input[type="email"]:focus { border-color: #6366f1; }
+
+    .login-error {
+      color: #ef4444;
+      font-size: 12px;
+      margin-bottom: 8px;
+      min-height: 16px;
+    }
+
+    .login-success {
+      color: #22c55e;
+      font-size: 13px;
+      margin-top: 12px;
+    }
+
+    /* --- User menu in header --- */
+    .user-menu {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .user-email {
+      color: #888;
+      font-size: 12px;
+    }
+
+    .header-btn {
+      padding: 4px 10px;
+      background: #333;
+      border: 1px solid #555;
+      border-radius: 4px;
+      color: #ccc;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .header-btn:hover { background: #444; color: #fff; }
+
+    /* --- Invite dialog --- */
+    .dialog-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10001;
+    }
+
+    .dialog-box {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 10px;
+      padding: 28px;
+      width: 360px;
+    }
+
+    .dialog-box h3 {
+      color: #fff;
+      font-size: 16px;
+      margin-bottom: 16px;
+    }
+
+    .dialog-box .field { margin-bottom: 12px; }
+
+    .dialog-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 16px;
+    }
   </style>
 </head>
 <body>
 
+<!-- Login overlay (shown when not authenticated) -->
+<div class="login-overlay" id="login-overlay" style="display:none">
+  <div class="login-box">
+    <h2>First Impression</h2>
+    <p>Sign in with your email to continue</p>
+    <div class="login-error" id="login-error"></div>
+    <input type="email" id="login-email" placeholder="you@example.com" onkeydown="if(event.key==='Enter')handleLogin()">
+    <button class="btn-primary" id="login-btn" onclick="handleLogin()">Submit</button>
+    <div class="login-success" id="login-success" style="display:none">Check your email for a sign-in link.</div>
+  </div>
+</div>
+
 <header>
   <h1>First Impression</h1>
+  <div class="user-menu" id="user-menu" style="display:none">
+    <span class="user-email" id="user-email"></span>
+    <button class="header-btn" onclick="showInviteDialog()">Invite</button>
+    <button class="header-btn" onclick="handleLogout()">Sign Out</button>
+  </div>
 </header>
 
 <div class="panels">
   <!-- Left Panel: New Recording -->
   <div class="panel panel-left">
-    <div class="panel-header">New Recording</div>
     <div class="panel-body">
+      <div class="field">
+        <label for="tenant-select">Tenant</label>
+        <select id="tenant-select" onchange="onTenantSelect(this.value)" style="width:100%;padding:6px 8px;background:#222;border:1px solid #444;border-radius:4px;color:#e0e0e0;font-size:13px;outline:none">
+          <option value="">-- Select tenant --</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="rec-tenant-id">Tenant ID</label>
+        <div style="display:flex;gap:4px;align-items:center">
+          <input type="text" id="rec-tenant-id" placeholder="e.g. 42" inputmode="numeric" disabled style="flex:1">
+          <button class="btn-icon" id="btn-tenant-edit" onclick="toggleTenantEdit()" title="Edit">&#9998;</button>
+          <button class="btn-icon" id="btn-tenant-confirm" onclick="confirmTenantEdit()" title="Confirm" style="display:none;color:#22c55e">&#10003;</button>
+        </div>
+      </div>
+
       <div class="field">
         <label for="rec-url">Target URL</label>
         <input type="url" id="rec-url" value="https://demo-store.xinfer.ai">
@@ -662,27 +911,30 @@
         <input type="url" id="rec-widget-url" placeholder="https://example.com/widget.js">
       </div>
 
-      <div class="field">
-        <label for="rec-tenant-id">Tenant ID <span style="color:#888;font-weight:normal;font-size:11px">(for publishing)</span></label>
-        <input type="text" id="rec-tenant-id" placeholder="e.g. 42" inputmode="numeric">
+      <div style="margin-bottom:8px">
+        <button class="btn-secondary" style="width:100%" id="btn-simulate" onclick="launchSimulation()">Widget Chat Simulation</button>
       </div>
 
       <div class="field">
         <label>Queries</label>
         <div class="query-list" id="query-list">
-          <div class="query-row">
+          <div class="query-row" draggable="true">
+            <span class="drag-handle">&#9776;</span>
             <input type="text" value="Show me snowboards under $700">
             <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>
           </div>
-          <div class="query-row">
+          <div class="query-row" draggable="true">
+            <span class="drag-handle">&#9776;</span>
             <input type="text" value="Tell me about the Hydrogen">
             <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>
           </div>
-          <div class="query-row">
+          <div class="query-row" draggable="true">
+            <span class="drag-handle">&#9776;</span>
             <input type="text" value="Add it to my cart">
             <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>
           </div>
-          <div class="query-row">
+          <div class="query-row" draggable="true">
+            <span class="drag-handle">&#9776;</span>
             <input type="text" value="Let's check out">
             <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>
           </div>
@@ -690,7 +942,7 @@
         <button class="btn-add" onclick="addQuery()">+ Add query</button>
       </div>
 
-      <label class="toggle-field" for="rec-headed">
+      <label class="toggle-field" for="rec-headed" id="headed-toggle" style="display:none">
         <input type="checkbox" id="rec-headed">
         <span class="toggle-switch"></span>
         <span>Show browser (headed)</span>
@@ -713,6 +965,18 @@
       </div>
       <div id="voiceover-status" style="margin-top:4px;font-size:12px"></div>
 
+      <!-- Voice Clips section -->
+      <div id="voice-clips-section" style="margin-top:10px;display:none">
+        <div style="display:flex;align-items:center;gap:6px;cursor:pointer" onclick="toggleVoiceClips()">
+          <span id="voice-clips-arrow" style="font-size:10px;color:#888;transition:transform 0.2s">&#9654;</span>
+          <span style="font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.3px">Voice Clips</span>
+          <span id="voice-clips-count" style="font-size:11px;color:#666"></span>
+          <button class="btn-icon" style="width:22px;height:22px;margin-left:auto;font-size:11px" onclick="event.stopPropagation();loadVoiceClips()" title="Refresh">&#8635;</button>
+        </div>
+        <div id="voice-clips-list" style="display:none;margin-top:6px">
+        </div>
+      </div>
+
       <div style="margin-top:8px">
         <button class="btn-secondary" style="width:100%" id="btn-compose" onclick="composeFinal()" disabled>Compose Final Video</button>
       </div>
@@ -734,7 +998,6 @@
 
   <!-- Right Panel: Review & Trim -->
   <div class="panel panel-right">
-    <div class="panel-header">Review & Trim</div>
     <div class="panel-body" id="detail-panel">
       <div class="empty-state">Select a recording</div>
     </div>
@@ -742,6 +1005,214 @@
 </div>
 
 <script>
+  // --- Auth ---
+  let currentUser = null;
+
+  async function checkAuth() {
+    // Check for error param from callback redirect
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get('error');
+    if (error === 'invalid_or_expired_token') {
+      // Show login with error, clean URL
+      window.history.replaceState({}, '', '/');
+      showLogin('Link is invalid or expired. Please try again.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/auth/status');
+      const data = await res.json();
+      if (data.authenticated && data.user) {
+        currentUser = data.user;
+        hideLogin();
+        initApp();
+      } else {
+        showLogin();
+      }
+    } catch {
+      showLogin();
+    }
+  }
+
+  function showLogin(errorMsg) {
+    document.getElementById('login-overlay').style.display = 'flex';
+    document.getElementById('user-menu').style.display = 'none';
+    if (errorMsg) {
+      document.getElementById('login-error').textContent = errorMsg;
+    }
+  }
+
+  function hideLogin() {
+    document.getElementById('login-overlay').style.display = 'none';
+    document.getElementById('user-menu').style.display = 'flex';
+    document.getElementById('user-email').textContent = currentUser.email;
+  }
+
+  async function handleLogin() {
+    const emailInput = document.getElementById('login-email');
+    const email = emailInput.value.trim();
+    if (!email) return;
+
+    const btn = document.getElementById('login-btn');
+    const errorEl = document.getElementById('login-error');
+    const successEl = document.getElementById('login-success');
+
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+    errorEl.textContent = '';
+    successEl.style.display = 'none';
+
+    try {
+      const res = await fetch('/auth/magic-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to send magic link');
+      }
+
+      btn.style.display = 'none';
+      emailInput.style.display = 'none';
+      successEl.style.display = 'block';
+    } catch (err) {
+      errorEl.textContent = err.message;
+      btn.disabled = false;
+      btn.textContent = 'Submit';
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await fetch('/auth/logout', { method: 'POST' });
+    } catch {}
+    currentUser = null;
+    // Reset login form
+    document.getElementById('login-btn').style.display = '';
+    document.getElementById('login-btn').disabled = false;
+    document.getElementById('login-btn').textContent = 'Submit';
+    document.getElementById('login-email').style.display = '';
+    document.getElementById('login-email').value = '';
+    document.getElementById('login-success').style.display = 'none';
+    document.getElementById('login-error').textContent = '';
+    showLogin();
+  }
+
+  function showInviteDialog() {
+    // Remove existing dialog if any
+    const existing = document.getElementById('invite-dialog');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+    overlay.id = 'invite-dialog';
+    overlay.innerHTML = `
+      <div class="dialog-box">
+        <h3>Invite a Team Member</h3>
+        <div class="field">
+          <label for="invite-email">Email</label>
+          <input type="email" id="invite-email" placeholder="colleague@example.com" style="width:100%;padding:8px 10px;background:#222;border:1px solid #444;border-radius:4px;color:#e0e0e0;font-size:13px;outline:none">
+        </div>
+        <div id="invite-msg" style="font-size:12px;min-height:16px"></div>
+        <div class="dialog-actions">
+          <button class="btn-secondary" onclick="document.getElementById('invite-dialog').remove()">Cancel</button>
+          <button class="btn-primary" style="width:auto;padding:8px 20px" id="invite-send-btn" onclick="sendInvite()">Send Invite</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+    document.getElementById('invite-email').focus();
+  }
+
+  async function sendInvite() {
+    const email = document.getElementById('invite-email').value.trim();
+    if (!email) return;
+
+    const btn = document.getElementById('invite-send-btn');
+    const msg = document.getElementById('invite-msg');
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+    msg.innerHTML = '';
+
+    try {
+      const res = await fetch('/api/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Invite failed');
+      }
+
+      msg.innerHTML = '<span style="color:#22c55e">Invite sent!</span>';
+      btn.textContent = 'Done';
+      setTimeout(() => {
+        document.getElementById('invite-dialog')?.remove();
+      }, 1500);
+    } catch (err) {
+      msg.innerHTML = `<span style="color:#ef4444">${err.message}</span>`;
+      btn.disabled = false;
+      btn.textContent = 'Send Invite';
+    }
+  }
+
+  function initApp() {
+    // Only show headed toggle on localhost; force headless on remote
+    const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    if (isLocal) {
+      document.getElementById('headed-toggle').style.display = '';
+    }
+
+    restoreFormState();
+
+    // Seed tenant ID from ?id= query param (overrides saved state)
+    const urlParams = new URLSearchParams(window.location.search);
+    const idParam = urlParams.get('id');
+    if (idParam && /^\d+$/.test(idParam)) {
+      document.getElementById('rec-tenant-id').value = idParam;
+      saveFormState();
+    }
+
+    // Load tenant list dropdown + tenant info (skip field population on reload — restoreFormState already handled it)
+    loadTenantList();
+    const tenantVal = document.getElementById('rec-tenant-id').value.trim();
+    if (tenantVal && /^\d+$/.test(tenantVal)) {
+      loadTenantInfo(false);
+    }
+
+    // Force headless on remote servers (no display available)
+    if (!isLocal) {
+      document.getElementById('rec-headed').checked = false;
+    }
+
+    // Save form state on changes
+    document.getElementById('rec-url').addEventListener('input', saveFormState);
+    document.getElementById('rec-widget-url').addEventListener('input', saveFormState);
+    document.getElementById('rec-headed').addEventListener('change', saveFormState);
+    document.getElementById('query-list').addEventListener('input', saveFormState);
+
+    // Save config to backend on blur (when a recording is selected)
+    document.getElementById('rec-url').addEventListener('blur', saveConfigToBackend);
+    document.getElementById('rec-widget-url').addEventListener('blur', saveConfigToBackend);
+    document.getElementById('query-list').addEventListener('blur', saveConfigToBackend, true);
+
+    loadRecordings().then(() => {
+      const lastId = getLastSelected();
+      // Only restore last selected if the sidebar has recordings for this tenant
+      const hasRecordings = document.querySelector('#recordings-list .recording-item');
+      if (lastId && hasRecordings) selectRecording(lastId);
+    });
+  }
+
+  // Start auth check immediately
+  checkAuth();
+
   let selectedId = null;
 
   // --- Local storage state ---
@@ -779,14 +1250,233 @@
 
   function saveFormState() {
     const state = loadState();
-    state.form = {
+    const tenantId = document.getElementById('rec-tenant-id').value.trim();
+    const formData = {
       url: document.getElementById('rec-url').value,
       widgetUrl: document.getElementById('rec-widget-url').value,
-      tenantId: document.getElementById('rec-tenant-id').value,
+      tenantId,
       queries: getQueries(),
       headed: document.getElementById('rec-headed').checked,
     };
+    state.form = formData;
+
+    // Also save per-tenant so we can restore when switching
+    if (tenantId) {
+      if (!state.tenantForms) state.tenantForms = {};
+      state.tenantForms[tenantId] = {
+        url: formData.url,
+        widgetUrl: formData.widgetUrl,
+        queries: formData.queries,
+      };
+    }
+
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function loadTenantFormState(tenantId) {
+    const state = loadState();
+    return state.tenantForms?.[tenantId] || null;
+  }
+
+  // --- Tenant selector dropdown ---
+  let tenantList = []; // cached from /api/tenants
+
+  async function loadTenantList() {
+    try {
+      const res = await fetch('/api/tenants');
+      if (!res.ok) return;
+      tenantList = await res.json();
+      renderTenantDropdown();
+    } catch (err) {
+      console.warn('[Tenants] Failed to load:', err);
+    }
+  }
+
+  function renderTenantDropdown() {
+    const select = document.getElementById('tenant-select');
+    const currentVal = document.getElementById('rec-tenant-id').value.trim();
+
+    // Collect all known tenant IDs from server list
+    const knownIds = new Set(tenantList.map(t => String(t.tenantId)));
+
+    // Build options from server list
+    let html = '<option value="">-- Select tenant --</option>';
+    for (const t of tenantList) {
+      const label = buildTenantLabel(t);
+      const selected = currentVal === String(t.tenantId) ? ' selected' : '';
+      html += `<option value="${t.tenantId}"${selected}>${label}</option>`;
+    }
+
+    // Add locally-saved tenants that aren't on the server yet (drafted but no recordings)
+    const state = loadState();
+    if (state.tenantForms) {
+      for (const tid of Object.keys(state.tenantForms)) {
+        if (!knownIds.has(tid)) {
+          const selected = currentVal === tid ? ' selected' : '';
+          html += `<option value="${tid}"${selected}>${tid} (draft)</option>`;
+          knownIds.add(tid);
+        }
+      }
+    }
+
+    // If current tenant ID still isn't in any list, add it
+    if (currentVal && !knownIds.has(currentVal)) {
+      html += `<option value="${currentVal}" selected>${currentVal}</option>`;
+    }
+
+    select.innerHTML = html;
+  }
+
+  function buildTenantLabel(t) {
+    const snap = t.tenantSnapshot;
+    const name = snap?.setup?.businessName || snap?.app?.title || '';
+    let label = String(t.tenantId);
+    if (name) label += ' - ' + name;
+    if (t.versions && t.versions.length > 0) {
+      const latest = Math.max(...t.versions.map(v => v.version));
+      label += ` (v${latest})`;
+    }
+    return label;
+  }
+
+  function onTenantSelect(val) {
+    if (!val) return;
+    const input = document.getElementById('rec-tenant-id');
+    const currentVal = input.value.trim();
+    if (val === currentVal) return;
+
+    // Save current tenant's form state before switching
+    saveFormState();
+
+    input.value = val;
+    input.disabled = true;
+    document.getElementById('btn-tenant-edit').style.display = 'flex';
+    document.getElementById('btn-tenant-confirm').style.display = 'none';
+
+    // Restore form: local saved state first, then published config, then tenant info
+    const localForm = loadTenantFormState(val);
+    const tenant = tenantList.find(t => String(t.tenantId) === val);
+    const cfg = localForm || tenant?.config;
+
+    if (cfg) {
+      if (cfg.url) document.getElementById('rec-url').value = cfg.url;
+      document.getElementById('rec-widget-url').value = cfg.widgetUrl || '';
+      if (cfg.queries && cfg.queries.length > 0) {
+        const list = document.getElementById('query-list');
+        list.innerHTML = '';
+        for (const q of cfg.queries) {
+          const row = document.createElement('div');
+          row.className = 'query-row';
+          row.draggable = true;
+          row.innerHTML = `<span class="drag-handle">&#9776;</span><input type="text" value="${q.replace(/"/g, '&quot;')}">
+            <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>`;
+          list.appendChild(row);
+        }
+      }
+    }
+
+    saveFormState();
+    syncTenantIdToUrl();
+    // Only fetch remote tenant info if we didn't have local state
+    if (!localForm) loadTenantInfo();
+    loadRecordings();
+  }
+
+  function toggleTenantEdit() {
+    const input = document.getElementById('rec-tenant-id');
+    const editBtn = document.getElementById('btn-tenant-edit');
+    const confirmBtn = document.getElementById('btn-tenant-confirm');
+    input.disabled = false;
+    input.focus();
+    editBtn.style.display = 'none';
+    confirmBtn.style.display = 'flex';
+  }
+
+  function confirmTenantEdit() {
+    const input = document.getElementById('rec-tenant-id');
+    const editBtn = document.getElementById('btn-tenant-edit');
+    const confirmBtn = document.getElementById('btn-tenant-confirm');
+    input.disabled = true;
+    editBtn.style.display = 'flex';
+    confirmBtn.style.display = 'none';
+
+    // Sync dropdown selection
+    const select = document.getElementById('tenant-select');
+    const val = input.value.trim();
+    if (select.querySelector(`option[value="${val}"]`)) {
+      select.value = val;
+    } else if (val) {
+      // Add as manual entry and select it
+      const opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = val;
+      select.appendChild(opt);
+      select.value = val;
+    } else {
+      select.value = '';
+    }
+
+    saveFormState();
+    syncTenantIdToUrl();
+    loadTenantInfo();
+    loadRecordings();
+  }
+
+  function syncTenantIdToUrl() {
+    const val = document.getElementById('rec-tenant-id').value.trim();
+    const url = new URL(window.location);
+    if (val) {
+      url.searchParams.set('id', val);
+    } else {
+      url.searchParams.delete('id');
+    }
+    window.history.replaceState({}, '', url);
+  }
+
+  // --- Tenant info loading ---
+  let suggestedActions = [];
+
+  async function loadTenantInfo(populateFields = true) {
+    const tenantId = document.getElementById('rec-tenant-id').value.trim();
+    if (!tenantId || isNaN(Number(tenantId))) return;
+
+    try {
+      const res = await fetch(`/api/tenant/${tenantId}`);
+      if (!res.ok) return;
+      const info = await res.json();
+
+      if (populateFields) {
+        // Populate Target URL from website (only if empty)
+        const website = info.setup?.website || info.app?.homePageUrl;
+        if (website && !document.getElementById('rec-url').value.trim()) {
+          document.getElementById('rec-url').value = website;
+        }
+
+        // Populate Widget URL from subdomain (only if empty)
+        if (info.subdomain && !document.getElementById('rec-widget-url').value.trim()) {
+          document.getElementById('rec-widget-url').value = `https://${info.subdomain}.xinfer.ai/widget.js`;
+        }
+
+        saveFormState();
+      }
+
+      // Store suggested actions for query dropdown
+      suggestedActions = info.app?.suggestedActions || [];
+    } catch (err) {
+      console.warn('[Tenant] Failed to load info:', err);
+    }
+  }
+
+  function saveConfigToBackend() {
+    if (!selectedId) return;
+    const url = document.getElementById('rec-url').value.trim();
+    const widgetUrl = document.getElementById('rec-widget-url').value.trim();
+    const queries = getQueries();
+    fetch(`/api/recordings/${selectedId}/config`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, queries, widgetUrl: widgetUrl || null }),
+    }).catch(() => {});
   }
 
   function restoreFormState() {
@@ -794,7 +1484,7 @@
     if (!state.form) return;
     const { url, widgetUrl, tenantId, queries, headed } = state.form;
     if (url) document.getElementById('rec-url').value = url;
-    if (widgetUrl) document.getElementById('rec-widget-url').value = widgetUrl;
+    document.getElementById('rec-widget-url').value = widgetUrl || '';
     if (tenantId) document.getElementById('rec-tenant-id').value = tenantId;
     if (headed) document.getElementById('rec-headed').checked = headed;
     if (queries && queries.length > 0) {
@@ -803,7 +1493,8 @@
       for (const q of queries) {
         const row = document.createElement('div');
         row.className = 'query-row';
-        row.innerHTML = `<input type="text" value="${q.replace(/"/g, '&quot;')}">
+        row.draggable = true;
+        row.innerHTML = `<span class="drag-handle">&#9776;</span><input type="text" value="${q.replace(/"/g, '&quot;')}">
           <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>`;
         list.appendChild(row);
       }
@@ -815,13 +1506,61 @@
     const list = document.getElementById('query-list');
     const row = document.createElement('div');
     row.className = 'query-row';
+    row.draggable = true;
     row.innerHTML = `
-      <input type="text" placeholder="Enter a query...">
+      <span class="drag-handle">&#9776;</span>
+      <input type="text" placeholder="Enter a query or pick a suggestion...">
       <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>
     `;
     list.appendChild(row);
-    row.querySelector('input').focus();
+    const input = row.querySelector('input');
+    input.focus();
+    showSuggestions(input);
     saveFormState();
+  }
+
+  function showSuggestions(input) {
+    // Remove any existing dropdown
+    hideSuggestions();
+    if (suggestedActions.length === 0) return;
+
+    // Filter out actions already used as queries
+    const used = new Set(getQueries());
+    const available = suggestedActions.filter(a => !used.has(a));
+    if (available.length === 0) return;
+
+    const row = input.closest('.query-row');
+    const dropdown = document.createElement('div');
+    dropdown.className = 'query-suggestions';
+    dropdown.id = 'query-suggestions-dropdown';
+
+    for (const action of available) {
+      const item = document.createElement('div');
+      item.className = 'query-suggestion-item';
+      item.textContent = action;
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        input.value = action;
+        hideSuggestions();
+        saveFormState();
+        saveConfigToBackend();
+      });
+      dropdown.appendChild(item);
+    }
+
+    row.appendChild(dropdown);
+
+    // Hide on blur (with delay so click registers)
+    input.addEventListener('blur', hideSuggestionsDelayed, { once: true });
+  }
+
+  function hideSuggestions() {
+    const existing = document.getElementById('query-suggestions-dropdown');
+    if (existing) existing.remove();
+  }
+
+  function hideSuggestionsDelayed() {
+    setTimeout(hideSuggestions, 150);
   }
 
   function removeQuery(btn) {
@@ -829,13 +1568,155 @@
     if (list.children.length > 1) {
       btn.parentElement.remove();
       saveFormState();
+      saveConfigToBackend();
     }
   }
+
+  // --- Query drag and drop ---
+  let dragRow = null;
+
+  document.getElementById('query-list').addEventListener('dragstart', (e) => {
+    const row = e.target.closest('.query-row');
+    if (!row) return;
+    dragRow = row;
+    row.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+
+  document.getElementById('query-list').addEventListener('dragend', (e) => {
+    if (dragRow) {
+      dragRow.classList.remove('dragging');
+      dragRow = null;
+    }
+    document.querySelectorAll('.query-row.drag-over').forEach(r => r.classList.remove('drag-over'));
+  });
+
+  document.getElementById('query-list').addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const row = e.target.closest('.query-row');
+    if (!row || row === dragRow) return;
+    document.querySelectorAll('.query-row.drag-over').forEach(r => r.classList.remove('drag-over'));
+    row.classList.add('drag-over');
+  });
+
+  document.getElementById('query-list').addEventListener('dragleave', (e) => {
+    const row = e.target.closest('.query-row');
+    if (row) row.classList.remove('drag-over');
+  });
+
+  document.getElementById('query-list').addEventListener('drop', (e) => {
+    e.preventDefault();
+    const target = e.target.closest('.query-row');
+    if (!target || !dragRow || target === dragRow) return;
+    target.classList.remove('drag-over');
+
+    const list = document.getElementById('query-list');
+    const rows = Array.from(list.children);
+    const fromIdx = rows.indexOf(dragRow);
+    const toIdx = rows.indexOf(target);
+
+    if (fromIdx < toIdx) {
+      list.insertBefore(dragRow, target.nextSibling);
+    } else {
+      list.insertBefore(dragRow, target);
+    }
+
+    saveFormState();
+    saveConfigToBackend();
+  });
 
   function getQueries() {
     return Array.from(document.querySelectorAll('#query-list input'))
       .map(i => i.value.trim())
       .filter(v => v.length > 0);
+  }
+
+  // --- Widget Chat Simulation ---
+  let simActive = false;
+
+  async function launchSimulation() {
+    const url = document.getElementById('rec-url').value.trim();
+    if (!url) return alert('Target URL is required');
+
+    const widgetUrl = document.getElementById('rec-widget-url').value.trim();
+
+    const btn = document.getElementById('btn-simulate');
+    btn.textContent = 'Loading...';
+    setActionBusy(true);
+
+    // Deselect any recording and show loading state in main panel
+    selectedId = null;
+    cachedData = null;
+    loadRecordings();
+    const panel = document.getElementById('detail-panel');
+    panel.innerHTML = '<div class="empty-state">Loading simulation...</div>';
+
+    if (widgetUrl) {
+      // With widget: take a screenshot of the target URL, then inject widget script on top
+      try {
+        const res = await fetch('/api/simulate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Simulation failed');
+
+        simActive = true;
+        showSimPanel(data.screenshot, widgetUrl);
+      } catch (err) {
+        alert('Simulation failed: ' + err.message);
+        panel.innerHTML = '<div class="empty-state">Select a recording</div>';
+      } finally {
+        btn.textContent = 'Widget Chat Simulation';
+        setActionBusy(false);
+      }
+    } else {
+      // No widget: show the target URL in an iframe
+      simActive = true;
+      showSimIframe(url);
+      btn.textContent = 'Widget Chat Simulation';
+      setActionBusy(false);
+    }
+  }
+
+  function showSimIframe(url) {
+    const panel = document.getElementById('detail-panel');
+    panel.innerHTML = `
+      <div style="height:100%;overflow:hidden;position:relative">
+        <iframe src="${url}" style="height:100%;width:1920px;border:none;float:right"></iframe>
+        <button class="btn-secondary" style="position:absolute;top:8px;left:8px;padding:4px 12px;font-size:12px;opacity:0.85;z-index:1" onclick="closeSimulation()">Close</button>
+      </div>`;
+  }
+
+  function showSimPanel(screenshotBase64, widgetUrl) {
+    const panel = document.getElementById('detail-panel');
+    panel.innerHTML = `
+      <div style="height:100%;overflow:hidden;position:relative">
+        <img src="data:image/png;base64,${screenshotBase64}" style="height:100%;float:right">
+        <button class="btn-secondary" style="position:absolute;top:8px;left:8px;padding:4px 12px;font-size:12px;opacity:0.85" onclick="closeSimulation()">Close</button>
+      </div>`;
+
+    // Inject the widget script so it loads live on top of the screenshot
+    if (widgetUrl) {
+      const script = document.createElement('script');
+      script.src = widgetUrl;
+      script.async = true;
+      script.id = 'sim-widget-script';
+      document.body.appendChild(script);
+    }
+  }
+
+  function closeSimulation() {
+    simActive = false;
+    // Remove widget script and DOM elements
+    const script = document.getElementById('sim-widget-script');
+    if (script) script.remove();
+    const widget = document.getElementById('xinfer-chat-widget');
+    if (widget) widget.remove();
+    document.getElementById('detail-panel').innerHTML =
+      '<div class="empty-state">Select a recording</div>';
   }
 
   // --- Start recording ---
@@ -848,16 +1729,18 @@
     if (!url || queries.length === 0) return;
 
     const btn = document.getElementById('btn-record');
-    btn.disabled = true;
     btn.textContent = 'Recording...';
+    setActionBusy(true);
 
     const log = document.getElementById('progress-log');
     log.style.display = 'block';
     log.innerHTML = '';
 
     try {
+      const tenantId = document.getElementById('rec-tenant-id').value.trim();
       const body = { url, queries, headed };
       if (widgetUrl) body.widgetUrl = widgetUrl;
+      if (tenantId && !isNaN(Number(tenantId))) body.tenantId = Number(tenantId);
       const res = await fetch('/api/recordings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -877,9 +1760,10 @@
 
         if (event.type === 'done' || event.type === 'error') {
           source.close();
-          btn.disabled = false;
-          btn.textContent = 'Start Recording';
+          btn.textContent = 'Start New Recording';
+          setActionBusy(false);
           loadRecordings();
+          loadTenantList(); // Refresh dropdown with new in-progress tenant
         }
       };
     } catch (err) {
@@ -887,8 +1771,8 @@
       line.className = 'log-line error';
       line.textContent = 'Failed to start recording: ' + err.message;
       log.appendChild(line);
-      btn.disabled = false;
-      btn.textContent = 'Start Recording';
+      btn.textContent = 'Start New Recording';
+      setActionBusy(false);
     }
   }
 
@@ -896,12 +1780,40 @@
   async function loadRecordings() {
     try {
       const res = await fetch('/api/recordings');
-      const recordings = await res.json();
+      let recordings = await res.json();
       const list = document.getElementById('recordings-list');
+
+      // Filter by current tenant ID
+      const currentTenant = document.getElementById('rec-tenant-id').value.trim();
+      if (currentTenant && !isNaN(Number(currentTenant))) {
+        const tid = Number(currentTenant);
+        recordings = recordings.filter(r => r.tenantId === tid);
+      }
 
       if (recordings.length === 0) {
         list.innerHTML = '<div style="color:#555;font-size:12px">No recordings yet</div>';
+        // Clear main panel if nothing matches the current tenant
+        if (selectedId) {
+          selectedId = null;
+          activeVideo = null;
+          cachedData = null;
+          document.getElementById('detail-panel').innerHTML =
+            '<div class="empty-state">Select a recording</div>';
+          speedExists = introExists = outroExists = voicedExists = finalExists = false;
+          updateActionButtons();
+        }
         return;
+      }
+
+      // Clear panel if selected recording isn't in this tenant's list
+      if (selectedId && !recordings.find(r => r.id === selectedId)) {
+        selectedId = null;
+        activeVideo = null;
+        cachedData = null;
+        document.getElementById('detail-panel').innerHTML =
+          '<div class="empty-state">Select a recording</div>';
+        speedExists = introExists = outroExists = voicedExists = finalExists = false;
+        updateActionButtons();
       }
 
       list.innerHTML = recordings.map(r => {
@@ -952,6 +1864,10 @@
   let cachedData = null; // cached recording data to avoid re-fetching on tab switch
 
   async function selectRecording(id, switchToVideo) {
+    // Close any active simulation
+    if (simActive) {
+      simActive = false;
+    }
     selectedId = id;
     editCuts = []; // Reset edit bar for new recording
     checkVideoStates();
@@ -964,6 +1880,12 @@
       if (!cachedData || cachedData.id !== id || !switchToVideo) {
         panel.innerHTML = '<div class="empty-state">Loading...</div>';
         const res = await fetch(`/api/recordings/${id}`);
+        if (!res.ok) {
+          panel.innerHTML = '<div class="empty-state">Recording not found</div>';
+          cachedData = null;
+          selectedId = null;
+          return;
+        }
         cachedData = await res.json();
       }
 
@@ -978,7 +1900,8 @@
           for (const q of c.queries) {
             const row = document.createElement('div');
             row.className = 'query-row';
-            row.innerHTML = `<input type="text" value="${q.replace(/"/g, '&quot;')}">
+            row.draggable = true;
+            row.innerHTML = `<span class="drag-handle">&#9776;</span><input type="text" value="${q.replace(/"/g, '&quot;')}">
               <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>`;
             list.appendChild(row);
           }
@@ -1399,7 +2322,7 @@
     if (!confirm(`Save ${videoLabel(video)} at ${label} speed as a new video?`)) return;
 
     const btn = event.target;
-    btn.disabled = true;
+    setActionBusy(true);
     btn.textContent = 'Rendering...';
 
     try {
@@ -1425,7 +2348,7 @@
           const evt = JSON.parse(line.slice(6));
           if (evt.type === 'done') {
             btn.textContent = 'Save as WYSIWYG';
-            btn.disabled = false;
+            setActionBusy(false);
             // Reset speed to x1 so the new video plays at normal rate
             const speedSelect = document.getElementById('play-speed');
             if (speedSelect) {
@@ -1440,7 +2363,7 @@
           if (evt.type === 'error') {
             alert('Speed render failed: ' + evt.message);
             btn.textContent = 'Save as WYSIWYG';
-            btn.disabled = false;
+            setActionBusy(false);
             return;
           }
           btn.textContent = evt.message;
@@ -1449,7 +2372,7 @@
     } catch (err) {
       alert('Speed render failed: ' + err.message);
       btn.textContent = 'Save as WYSIWYG';
-      btn.disabled = false;
+      setActionBusy(false);
     }
   }
 
@@ -1511,7 +2434,7 @@
     const btn = document.getElementById('btn-edit-trim');
     const progressDiv = document.getElementById('edit-trim-progress');
     const log = document.getElementById('edit-trim-log');
-    btn.disabled = true;
+    setActionBusy(true);
     btn.textContent = 'Trimming...';
     progressDiv.style.display = 'block';
     log.innerHTML = '';
@@ -1549,7 +2472,7 @@
 
           if (evt.type === 'done') {
             btn.textContent = 'Generate Trimmed Video from Edit';
-            btn.disabled = false;
+            setActionBusy(false);
             editCuts = [];
             loadRecordings();
             activeVideo = null;
@@ -1558,7 +2481,7 @@
           }
           if (evt.type === 'error') {
             btn.textContent = 'Generate Trimmed Video from Edit';
-            btn.disabled = false;
+            setActionBusy(false);
             return;
           }
         }
@@ -1566,7 +2489,7 @@
     } catch (err) {
       addLog('Trim failed: ' + err.message, 'error');
       btn.textContent = 'Generate Trimmed Video from Edit';
-      btn.disabled = false;
+      setActionBusy(false);
     }
   }
 
@@ -1792,7 +2715,7 @@
       return;
     }
     const btn = document.getElementById('btn-preview');
-    btn.disabled = true;
+    setActionBusy(true);
     btn.textContent = 'Loading...';
     try {
       const res = await fetch(`/api/recordings/${selectedId}/preview`, {
@@ -1819,7 +2742,7 @@
       alert('Preview failed: ' + err.message);
     } finally {
       btn.textContent = 'Preview';
-      btn.disabled = false;
+      setActionBusy(false);
     }
   }
 
@@ -1834,7 +2757,7 @@
 
     const btn = document.getElementById('btn-publish');
     const status = document.getElementById('publish-status');
-    btn.disabled = true;
+    setActionBusy(true);
     btn.textContent = 'Publishing...';
     status.innerHTML = '<span style="color:#888">Uploading to S3...</span>';
 
@@ -1850,16 +2773,18 @@
         throw new Error(data.error || 'Publish failed');
       }
 
-      status.innerHTML = `<span style="color:#22c55e">Published!</span>
+      const vLabel = data.version ? ` v${data.version}` : '';
+      status.innerHTML = `<span style="color:#22c55e">Published${vLabel}!</span>
         <a href="${data.url}" target="_blank" rel="noopener" style="color:#6366f1;margin-left:6px;word-break:break-all">${data.url}</a>
         <span style="color:#666;margin-left:6px">(${data.video})</span>`;
       btn.textContent = 'Publish';
-      btn.disabled = false;
+      setActionBusy(false);
+      loadTenantList(); // Refresh dropdown with new published entry
       composeOutreachLetters(data);
     } catch (err) {
       status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
       btn.textContent = 'Publish';
-      btn.disabled = false;
+      setActionBusy(false);
     }
   }
 
@@ -1997,6 +2922,12 @@ Best,`;
     speedExists = speed;
     voicedExists = voiced;
 
+    // Show voice clips section if voiced video exists or intro/outro exist
+    const vcSection = document.getElementById('voice-clips-section');
+    if (vcSection) {
+      vcSection.style.display = (voiced || intro || outro) ? 'block' : 'none';
+    }
+
     updateActionButtons();
   }
 
@@ -2012,7 +2943,7 @@ Best,`;
 
     const btn = document.getElementById('btn-intro-make');
     const status = document.getElementById('intro-status');
-    btn.disabled = true;
+    setActionBusy(true);
     btn.textContent = 'Generating...';
     status.innerHTML = '<span style="color:#888">Creating intro scene...</span>';
 
@@ -2042,7 +2973,7 @@ Best,`;
           if (evt.type === 'done') {
             status.innerHTML = '<span style="color:#22c55e">Intro & Outro ready!</span>';
             btn.textContent = 'Make Intro & Outro';
-            btn.disabled = false;
+            setActionBusy(false);
             loadRecordings();
             await refreshRecording(selectedId, 'intro.webm');
             checkVideoStates();
@@ -2050,7 +2981,7 @@ Best,`;
           }
           if (evt.type === 'error') {
             btn.textContent = 'Make Intro & Outro';
-            btn.disabled = false;
+            setActionBusy(false);
             return;
           }
         }
@@ -2058,7 +2989,7 @@ Best,`;
     } catch (err) {
       status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
       btn.textContent = 'Make Intro';
-      btn.disabled = false;
+      setActionBusy(false);
     }
   }
 
@@ -2068,8 +2999,8 @@ Best,`;
 
     const btn = document.getElementById('btn-make-speed');
     const status = document.getElementById('speed-status');
-    btn.disabled = true;
     btn.textContent = 'Rendering...';
+    setActionBusy(true);
     status.innerHTML = '<span style="color:#888">Creating x2 speed video...</span>';
 
     try {
@@ -2097,7 +3028,7 @@ Best,`;
 
           if (evt.type === 'done') {
             btn.textContent = 'Make x2 Speed Video';
-            btn.disabled = false;
+            setActionBusy(false);
             loadRecordings();
             await refreshRecording(selectedId, 'raw-speed-2x.webm');
             checkVideoStates();
@@ -2105,7 +3036,7 @@ Best,`;
           }
           if (evt.type === 'error') {
             btn.textContent = 'Make x2 Speed Video';
-            btn.disabled = false;
+            setActionBusy(false);
             return;
           }
         }
@@ -2113,7 +3044,7 @@ Best,`;
     } catch (err) {
       status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
       btn.textContent = 'Make x2 Speed Video';
-      btn.disabled = false;
+      setActionBusy(false);
     }
   }
 
@@ -2123,7 +3054,7 @@ Best,`;
 
     const btn = document.getElementById('btn-compose');
     const status = document.getElementById('compose-status');
-    btn.disabled = true;
+    setActionBusy(true);
     btn.textContent = 'Composing...';
     status.innerHTML = '<span style="color:#888">Concatenating intro + video + outro...</span>';
 
@@ -2153,7 +3084,7 @@ Best,`;
 
           if (evt.type === 'done') {
             btn.textContent = 'Compose Final Video';
-            btn.disabled = false;
+            setActionBusy(false);
             loadRecordings();
             await refreshRecording(selectedId, 'final.webm');
             checkVideoStates();
@@ -2161,7 +3092,7 @@ Best,`;
           }
           if (evt.type === 'error') {
             btn.textContent = 'Compose Final Video';
-            btn.disabled = false;
+            setActionBusy(false);
             return;
           }
         }
@@ -2169,7 +3100,7 @@ Best,`;
     } catch (err) {
       status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
       btn.textContent = 'Compose Final Video';
-      btn.disabled = false;
+      setActionBusy(false);
     }
   }
 
@@ -2182,12 +3113,14 @@ Best,`;
       return;
     }
 
-    // Use the currently active video tab
-    const video = activeVideo || 'raw.webm';
+    // Pick best video: prefer speed-2x if it exists, otherwise raw
+    // Only videos with timeline events and not already voiced qualify
+    const videos = cachedData?.videos?.map(v => v.file) || [];
+    const video = videos.includes('raw-speed-2x.webm') ? 'raw-speed-2x.webm' : 'raw.webm';
 
     const btn = document.getElementById('btn-voiceover');
     const status = document.getElementById('voiceover-status');
-    btn.disabled = true;
+    setActionBusy(true);
     btn.textContent = 'Generating...';
     status.innerHTML = '<span style="color:#888">Adding voiceover...</span>';
 
@@ -2216,7 +3149,7 @@ Best,`;
 
           if (evt.type === 'done') {
             btn.textContent = 'Add Voice to Video';
-            btn.disabled = false;
+            setActionBusy(false);
             const voicedFile = video.replace('.webm', '-voiced.webm');
             loadRecordings();
             await refreshRecording(selectedId, voicedFile);
@@ -2225,7 +3158,7 @@ Best,`;
           }
           if (evt.type === 'error') {
             btn.textContent = 'Add Voice to Video';
-            btn.disabled = false;
+            setActionBusy(false);
             return;
           }
         }
@@ -2233,11 +3166,118 @@ Best,`;
     } catch (err) {
       status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
       btn.textContent = 'Add Voice to Video';
-      btn.disabled = false;
+      setActionBusy(false);
     }
   }
 
+  // --- Voice Clips ---
+  let voiceClipsExpanded = false;
+  let voiceClipsAudio = null; // current <audio> element
+
+  function toggleVoiceClips() {
+    voiceClipsExpanded = !voiceClipsExpanded;
+    document.getElementById('voice-clips-list').style.display = voiceClipsExpanded ? 'block' : 'none';
+    document.getElementById('voice-clips-arrow').style.transform = voiceClipsExpanded ? 'rotate(90deg)' : '';
+    if (voiceClipsExpanded) loadVoiceClips();
+  }
+
+  async function loadVoiceClips() {
+    if (!selectedId) return;
+
+    const container = document.getElementById('voice-clips-list');
+    container.innerHTML = '<span style="color:#888;font-size:11px">Loading...</span>';
+
+    try {
+      const res = await fetch(`/api/recordings/${selectedId}/voice-clips`);
+      if (!res.ok) throw new Error('Failed to load clips');
+      const { clips } = await res.json();
+
+      document.getElementById('voice-clips-count').textContent = `(${clips.length})`;
+
+      if (clips.length === 0) {
+        container.innerHTML = '<span style="color:#666;font-size:11px">No voice clips found</span>';
+        return;
+      }
+
+      container.innerHTML = clips.map(c => `
+        <div class="voice-clip-row" data-file="${c.file}" data-text="${c.text.replace(/"/g, '&quot;')}">
+          <span class="voice-clip-badge badge-${c.type}">${c.type}</span>
+          <span class="voice-clip-text" title="${c.text.replace(/"/g, '&quot;')}">${c.text}</span>
+          <span class="voice-clip-dur">${c.duration.toFixed(1)}s</span>
+          <button class="voice-clip-btn" onclick="playVoiceClip(this, '${c.file}')" title="Play">&#9654;</button>
+          <button class="voice-clip-btn delete" onclick="deleteVoiceClip('${c.file}', this)" title="Delete">&#10005;</button>
+        </div>
+      `).join('');
+    } catch (err) {
+      container.innerHTML = `<span style="color:#ef4444;font-size:11px">${err.message}</span>`;
+    }
+  }
+
+  function playVoiceClip(btn, file) {
+    // Stop any currently playing audio
+    if (voiceClipsAudio) {
+      voiceClipsAudio.pause();
+      voiceClipsAudio = null;
+      // Reset all play buttons
+      document.querySelectorAll('.voice-clip-btn').forEach(b => {
+        if (b.textContent.trim() === '\u25A0') { b.innerHTML = '&#9654;'; }
+      });
+    }
+
+    if (btn.textContent.trim() === '\u25A0') {
+      btn.innerHTML = '&#9654;';
+      return;
+    }
+
+    const audio = new Audio(`/api/recordings/${selectedId}/voice-clips/${file}`);
+    voiceClipsAudio = audio;
+    btn.innerHTML = '&#9632;'; // stop icon
+
+    audio.onended = () => {
+      btn.innerHTML = '&#9654;';
+      voiceClipsAudio = null;
+    };
+    audio.onerror = () => {
+      btn.innerHTML = '&#9654;';
+      voiceClipsAudio = null;
+    };
+    audio.play();
+  }
+
+  async function deleteVoiceClip(file, btn) {
+    if (!confirm(`Delete voice clip "${file}"? The voiced video will also be removed.`)) return;
+
+    const row = btn.closest('.voice-clip-row');
+    const text = row?.dataset.text || '';
+
+    try {
+      const res = await fetch(`/api/recordings/${selectedId}/voice-clips/${file}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error('Delete failed');
+
+      row.remove();
+      // Refresh recording detail to update video tabs
+      loadRecordings();
+      await refreshRecording(selectedId);
+      checkVideoStates();
+    } catch (err) {
+      alert('Failed to delete clip: ' + err.message);
+    }
+  }
+
+  let actionBusy = false;
+
+  function setActionBusy(busy) {
+    actionBusy = busy;
+    updateActionButtons();
+  }
+
   function updateActionButtons() {
+    const recordBtn = document.getElementById('btn-record');
+    const simulateBtn = document.getElementById('btn-simulate');
     const speedBtn = document.getElementById('btn-make-speed');
     const makeBtn = document.getElementById('btn-intro-make');
     const voBtn = document.getElementById('btn-voiceover');
@@ -2246,7 +3286,27 @@ Best,`;
     const publishBtn = document.getElementById('btn-publish');
     const hasRecording = !!selectedId;
 
-    // All action buttons need a recording selected
+    const wysiwygBtn = document.getElementById('btn-wysiwyg');
+    const trimBtn = document.getElementById('btn-edit-trim');
+
+    if (actionBusy) {
+      // When any action is running, disable all buttons
+      if (recordBtn) recordBtn.disabled = true;
+      if (simulateBtn) simulateBtn.disabled = true;
+      if (speedBtn) speedBtn.disabled = true;
+      if (makeBtn) makeBtn.disabled = true;
+      if (voBtn) voBtn.disabled = true;
+      if (compBtn) compBtn.disabled = true;
+      if (previewBtn) previewBtn.disabled = true;
+      if (publishBtn) publishBtn.disabled = true;
+      if (wysiwygBtn) wysiwygBtn.disabled = true;
+      if (trimBtn) trimBtn.disabled = true;
+      return;
+    }
+
+    // Normal enable/disable logic
+    if (recordBtn) recordBtn.disabled = false;
+    if (simulateBtn) simulateBtn.disabled = false;
     if (speedBtn) speedBtn.disabled = !hasRecording;
     if (makeBtn) makeBtn.disabled = !hasRecording;
     if (voBtn) voBtn.disabled = !hasRecording;
@@ -2283,20 +3343,7 @@ Best,`;
 
   }
 
-  // --- Initial load ---
-  restoreFormState();
 
-  // Save form state on changes
-  document.getElementById('rec-url').addEventListener('input', saveFormState);
-  document.getElementById('rec-widget-url').addEventListener('input', saveFormState);
-  document.getElementById('rec-tenant-id').addEventListener('input', saveFormState);
-  document.getElementById('rec-headed').addEventListener('change', saveFormState);
-  document.getElementById('query-list').addEventListener('input', saveFormState);
-
-  loadRecordings().then(() => {
-    const lastId = getLastSelected();
-    if (lastId) selectRecording(lastId);
-  });
 </script>
 
 </body>

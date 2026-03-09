@@ -14,6 +14,7 @@ export interface DemoPageOptions {
 	snapshotFilename?: string; // e.g. "snapshot.png"
 	assetsBaseUrl: string; // e.g. "https://assets.xinfer.com"
 	tenantSlug: string; // used in URL path
+	version?: number; // publish version (e.g. 1, 2, 3)
 	publishedId?: number; // for access tracking pixel
 	trackingUrl?: string; // GCF endpoint for access tracking
 }
@@ -25,6 +26,7 @@ export function generateDemoPage(opts: DemoPageOptions): string {
 		snapshotFilename,
 		assetsBaseUrl,
 		tenantSlug,
+		version,
 		publishedId,
 		trackingUrl,
 	} = opts;
@@ -34,7 +36,8 @@ export function generateDemoPage(opts: DemoPageOptions): string {
 	const tagline = setup.tagline || app.greetTitle || "";
 	const inventoryDescription = setup.inventoryDescription || "";
 	const assistantName = setup.assistantName || "AI Shopping Assistant";
-	const baseUrl = `${assetsBaseUrl}/demo/${tenantSlug}`;
+	const versionSuffix = version ? `/v${version}` : "";
+	const baseUrl = `${assetsBaseUrl}/demo/${tenantSlug}${versionSuffix}`;
 	const ogImage = snapshotFilename ? `${baseUrl}/${snapshotFilename}` : "";
 	const defaultLogo = "https://assets.xinfer.ai/logo-default.png";
 	const tenantLogo = app.logo && app.logo !== defaultLogo ? app.logo : null;

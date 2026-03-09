@@ -22,6 +22,7 @@ export interface PublishOptions {
 export interface PublishResult {
 	url: string;
 	publishedId?: number;
+	version?: number;
 }
 
 interface PresignedUpload {
@@ -38,12 +39,14 @@ interface PublishApiRequest {
 	videoFile?: string;
 	config?: Record<string, unknown>;
 	tenantSnapshot?: Record<string, unknown>;
+	cacheBust?: string;
 }
 
 interface PublishApiResponse {
 	uploads: Record<string, PresignedUpload>;
 	baseUrl: string;
 	publishedId?: number;
+	version?: number;
 }
 
 async function callPublishApi(
@@ -101,6 +104,35 @@ async function uploadWithPresignedUrl(
 	}
 }
 
+/**
+ * Update the published record URL with cache-bust query param.
+ */
+async function updatePublishedUrl(
+	tenantId: number,
+	publishedId: number,
+	cacheBust: string,
+): Promise<void> {
+	const baseUrl = process.env.RAG_CHATBOT_BASE_URL;
+	const apiKey = process.env.FIRST_IMPRESSION_API_KEY;
+	if (!baseUrl || !apiKey) return;
+
+	try {
+		await fetch(
+			`${baseUrl}/api/first-impression/t/${tenantId}/publish/${publishedId}`,
+			{
+				method: "PATCH",
+				headers: {
+					Authorization: `Bearer ${apiKey}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({ cacheBust }),
+			},
+		);
+	} catch {
+		// Non-critical — don't fail the publish
+	}
+}
+
 export async function publishDemo(
 	opts: PublishOptions,
 ): Promise<PublishResult> {
@@ -119,7 +151,7 @@ export async function publishDemo(
 	}
 
 	// Get presigned URLs + record the publish
-	const { uploads, baseUrl, publishedId } = await callPublishApi(
+	const { uploads, baseUrl, publishedId, version } = await callPublishApi(
 		tenantInfo.tenantId,
 		{
 			slug: tenantSlug,
@@ -133,6 +165,11 @@ export async function publishDemo(
 	// Cache-bust: timestamp so CloudFront serves fresh content
 	const cacheBust = `v=${Date.now()}`;
 	const videoFilename = `video.webm?${cacheBust}`;
+
+	// Update the published record URL with cache-bust version
+	if (publishedId) {
+		await updatePublishedUrl(tenantInfo.tenantId, publishedId, cacheBust);
+	}
 
 	// 1. Upload video (long cache — URL is cache-busted in HTML)
 	const videoBuffer = fs.readFileSync(videoPath);
@@ -160,6 +197,7 @@ export async function publishDemo(
 		snapshotFilename: hasSnapshot ? "snapshot.png" : undefined,
 		assetsBaseUrl,
 		tenantSlug,
+		version,
 		publishedId: publishedId ?? undefined,
 		trackingUrl: process.env.FI_ACCESS_URL,
 	};
@@ -185,5 +223,5 @@ export async function publishDemo(
 
 	// Return public URL
 	const url = `${baseUrl}?${cacheBust}`;
-	return { url, publishedId: publishedId ?? undefined };
+	return { url, publishedId: publishedId ?? undefined, version };
 }

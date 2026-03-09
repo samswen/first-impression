@@ -183,6 +183,81 @@ export function tenantSlugFromInfo(
 	);
 }
 
+// ─── Voice clip inspection ───────────────────────────────────────────
+
+export interface VoiceClip {
+	file: string;
+	text: string;
+	type: "intro" | "main" | "outro";
+	duration: number;
+}
+
+/** Get audio duration in seconds via ffprobe. */
+async function getAudioDuration(filePath: string): Promise<number> {
+	const { stdout } = await execP("ffprobe", [
+		"-v",
+		"error",
+		"-show_entries",
+		"format=duration",
+		"-of",
+		"csv=p=0",
+		filePath,
+	]);
+	return Number.parseFloat(stdout.trim());
+}
+
+/**
+ * List all voice clips in a recording directory with their narration text and duration.
+ * Reads from local manifests only — no external API calls needed.
+ */
+export async function getVoiceClips(dir: string): Promise<VoiceClip[]> {
+	const clips: VoiceClip[] = [];
+	const voDir = path.join(dir, "voiceover");
+
+	// Intro audio
+	const introPath = path.join(dir, "intro-audio.mp3");
+	if (fs.existsSync(introPath)) {
+		const textPath = path.join(dir, "intro-audio.txt");
+		const text = fs.existsSync(textPath)
+			? fs.readFileSync(textPath, "utf-8")
+			: "Intro";
+		const duration = await getAudioDuration(introPath);
+		clips.push({ file: "intro-audio.mp3", text, type: "intro", duration });
+	}
+
+	// Main voiceover clips — read from saved manifest
+	const manifestPath = path.join(voDir, "clips.json");
+	if (fs.existsSync(manifestPath)) {
+		const manifest: { file: string; text: string }[] = JSON.parse(
+			fs.readFileSync(manifestPath, "utf-8"),
+		);
+		for (const entry of manifest) {
+			const clipPath = path.join(voDir, entry.file);
+			if (!fs.existsSync(clipPath)) continue;
+			const duration = await getAudioDuration(clipPath);
+			clips.push({
+				file: entry.file,
+				text: entry.text,
+				type: "main",
+				duration,
+			});
+		}
+	}
+
+	// Outro audio
+	const outroPath = path.join(dir, "outro-audio.mp3");
+	if (fs.existsSync(outroPath)) {
+		const textPath = path.join(dir, "outro-audio.txt");
+		const text = fs.existsSync(textPath)
+			? fs.readFileSync(textPath, "utf-8")
+			: "Outro";
+		const duration = await getAudioDuration(outroPath);
+		clips.push({ file: "outro-audio.mp3", text, type: "outro", duration });
+	}
+
+	return clips;
+}
+
 // ─── Recording info types ────────────────────────────────────────────
 
 export interface RecordingInfo {
@@ -192,12 +267,14 @@ export interface RecordingInfo {
 	queryCount: number;
 	url: string;
 	status: string;
+	tenantId?: number;
 }
 
 export interface RecordingConfig {
 	url: string;
 	queries: string[];
 	widgetUrl: string | null;
+	tenantId?: number;
 }
 
 export interface RecordingDetails {
@@ -237,6 +314,7 @@ export interface PublishResult {
 	assistantName: string;
 	website: string | null;
 	publishedId?: number;
+	version?: number;
 }
 
 // ─── Orchestration functions ─────────────────────────────────────────
@@ -261,6 +339,11 @@ export function listRecordings(recordingsDir: string): RecordingInfo[] {
 				timeline = JSON.parse(fs.readFileSync(timelinePath, "utf-8"));
 			}
 
+			const configPath = path.join(dirPath, "config.json");
+			const config = fs.existsSync(configPath)
+				? JSON.parse(fs.readFileSync(configPath, "utf-8"))
+				: null;
+
 			return {
 				id,
 				hasRaw,
@@ -269,6 +352,7 @@ export function listRecordings(recordingsDir: string): RecordingInfo[] {
 					.length,
 				url: timeline.find((t) => t.action === "page-load")?.label ?? "",
 				status: trimCount > 0 ? "trimmed" : hasRaw ? "recorded" : "in-progress",
+				tenantId: config?.tenantId,
 			};
 		})
 		.sort((a, b) => b.id.localeCompare(a.id));
@@ -307,6 +391,7 @@ export function startRecording(
 		queries: string[];
 		headed?: boolean;
 		widgetUrl?: string;
+		tenantId?: number;
 	},
 	onProgress?: (event: ProgressEvent) => void,
 ): { id: string; dir: string; promise: Promise<void> } {
@@ -318,6 +403,7 @@ export function startRecording(
 		url: opts.url,
 		queries: opts.queries,
 		widgetUrl: opts.widgetUrl || null,
+		tenantId: opts.tenantId,
 	};
 	fs.mkdirSync(dir, { recursive: true });
 	fs.writeFileSync(
@@ -757,5 +843,6 @@ export async function publishRecording(
 			tenantInfo.setup.assistantName || tenantInfo.app.title || "AI Assistant",
 		website: tenantInfo.setup.website || tenantInfo.app.homePageUrl || null,
 		publishedId: result.publishedId,
+		version: result.version,
 	};
 }
