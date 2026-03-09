@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { exec } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -897,17 +896,5 @@ app.post("/api/simulate", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-	const url = `http://localhost:${PORT}`;
-	console.log(`First Impression running at ${url}`);
-
-	// Auto-open browser (skip on headless/remote servers)
-	if (!process.env.NO_OPEN) {
-		const cmd =
-			process.platform === "darwin"
-				? "open"
-				: process.platform === "win32"
-					? "start"
-					: "xdg-open";
-		exec(`${cmd} ${url}`, () => {});
-	}
+	console.log(`First Impression running at http://localhost:${PORT}`);
 });
