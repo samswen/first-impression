@@ -39,7 +39,6 @@ interface PublishApiRequest {
 	videoFile?: string;
 	config?: Record<string, unknown>;
 	tenantSnapshot?: Record<string, unknown>;
-	cacheBust?: string;
 }
 
 interface PublishApiResponse {
@@ -104,35 +103,6 @@ async function uploadWithPresignedUrl(
 	}
 }
 
-/**
- * Update the published record URL with cache-bust query param.
- */
-async function updatePublishedUrl(
-	tenantId: number,
-	publishedId: number,
-	cacheBust: string,
-): Promise<void> {
-	const baseUrl = process.env.RAG_CHATBOT_BASE_URL;
-	const apiKey = process.env.FIRST_IMPRESSION_API_KEY;
-	if (!baseUrl || !apiKey) return;
-
-	try {
-		await fetch(
-			`${baseUrl}/api/first-impression/t/${tenantId}/publish/${publishedId}`,
-			{
-				method: "PATCH",
-				headers: {
-					Authorization: `Bearer ${apiKey}`,
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({ cacheBust }),
-			},
-		);
-	} catch {
-		// Non-critical — don't fail the publish
-	}
-}
-
 export async function publishDemo(
 	opts: PublishOptions,
 ): Promise<PublishResult> {
@@ -162,16 +132,7 @@ export async function publishDemo(
 		},
 	);
 
-	// Cache-bust: timestamp so CloudFront serves fresh content
-	const cacheBust = `v=${Date.now()}`;
-	const videoFilename = `video.webm?${cacheBust}`;
-
-	// Update the published record URL with cache-bust version
-	if (publishedId) {
-		await updatePublishedUrl(tenantInfo.tenantId, publishedId, cacheBust);
-	}
-
-	// 1. Upload video (long cache — URL is cache-busted in HTML)
+	// 1. Upload video
 	const videoBuffer = fs.readFileSync(videoPath);
 	await uploadWithPresignedUrl(
 		uploads["video.webm"].url,
@@ -193,7 +154,7 @@ export async function publishDemo(
 	const assetsBaseUrl = "https://assets.xinfer.ai";
 	const pageOpts: DemoPageOptions = {
 		tenantInfo,
-		videoFilename,
+		videoFilename: "video.webm",
 		snapshotFilename: hasSnapshot ? "snapshot.png" : undefined,
 		assetsBaseUrl,
 		tenantSlug,
@@ -203,25 +164,21 @@ export async function publishDemo(
 	};
 	const html = generateDemoPage(pageOpts);
 
-	// 4. Upload index.html (no-cache so CloudFront always fetches fresh)
+	// 4. Upload index.html (immutable — versioned path never changes)
 	await uploadWithPresignedUrl(
 		uploads["index.html"].url,
 		html,
 		"text/html; charset=utf-8",
-		"public, no-cache",
 	);
 
-	// 5. Upload directory key (same HTML, for bare /demo/slug access)
+	// 5. Upload directory key (same HTML, for bare /demo/slug/vN access)
 	if (uploads.__dir__) {
 		await uploadWithPresignedUrl(
 			uploads.__dir__.url,
 			html,
 			"text/html; charset=utf-8",
-			"public, no-cache",
 		);
 	}
 
-	// Return public URL
-	const url = `${baseUrl}?${cacheBust}`;
-	return { url, publishedId: publishedId ?? undefined, version };
+	return { url: baseUrl, publishedId: publishedId ?? undefined, version };
 }
