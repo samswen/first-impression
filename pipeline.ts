@@ -806,6 +806,7 @@ export async function generatePreview(
 export async function publishRecording(
 	dir: string,
 	tenantId: number,
+	opts?: { force?: boolean },
 ): Promise<PublishResult> {
 	const bestVideo = pickBestVideo(dir);
 	const videoPath = path.join(dir, bestVideo);
@@ -831,6 +832,9 @@ export async function publishRecording(
 		videoFile: bestVideo,
 		snapshotPath: fs.existsSync(snapshotPath) ? snapshotPath : undefined,
 		config,
+		targetUrl: config?.url as string | undefined,
+		widgetUrl: config?.widgetUrl as string | undefined,
+		force: opts?.force,
 	});
 
 	return {

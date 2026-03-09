@@ -4,12 +4,14 @@
   "private": true,
   "scripts": {
     "record": "tsx record.ts",
-    "studio": "tsx --watch server.ts",
+    "studio": "tsx watch --exclude 'recordings/**' --exclude '.voice-cache/**' server.ts",
     "lint": "npx @biomejs/biome check --write .",
+    "cli": "tsx cli.ts",
     "typecheck": "npx tsc --noEmit",
     "test": "npm run lint && npm run typecheck"
   },
   "dependencies": {
+    "cookie-parser": "^1.4.7",
     "dotenv": "^17.3.1",
     "express": "^5.1.0",
     "playwright": "^1.52.0",
@@ -17,6 +19,7 @@
     "typescript": "^5.7.0"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.0"
   }
 }

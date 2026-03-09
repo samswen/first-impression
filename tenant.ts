@@ -8,6 +8,7 @@ import "dotenv/config";
 
 export interface TenantInfo {
 	tenantId: number;
+	subdomain: string | null;
 	setup: {
 		businessName: string | null;
 		businessType: string | null;

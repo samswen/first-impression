@@ -58,7 +58,7 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
 
 const RAG_CHATBOT_BASE_URL = process.env.RAG_CHATBOT_BASE_URL || "";
-const FI_AUTH_SECRET = process.env.FI_AUTH_SECRET || "";
+const FIRST_IMPRESSION_SECRET = process.env.FIRST_IMPRESSION_SECRET || "";
 const FIRST_IMPRESSION_API_KEY = process.env.FIRST_IMPRESSION_API_KEY || "";
 
 // Store active SSE connections per recording ID
@@ -131,7 +131,7 @@ app.post("/auth/magic-link", async (req, res) => {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
-					"X-FI-Auth-Secret": FI_AUTH_SECRET,
+					"X-FI-Auth-Secret": FIRST_IMPRESSION_SECRET,
 				},
 				body: JSON.stringify({ email, callbackBaseUrl }),
 			},
@@ -160,7 +160,7 @@ app.get("/auth/callback", async (req, res) => {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
-					"X-FI-Auth-Secret": FI_AUTH_SECRET,
+					"X-FI-Auth-Secret": FIRST_IMPRESSION_SECRET,
 				},
 				body: JSON.stringify({ token }),
 			},
@@ -269,7 +269,8 @@ app.get("/api/tenants", async (req, res) => {
 		if (baseUrl && apiKey) {
 			// Collect all known tenant IDs to query across all users
 			const allTenantIds = [...localTenants.keys()];
-			const qs = allTenantIds.length > 0 ? `?tenantIds=${allTenantIds.join(",")}` : "";
+			const qs =
+				allTenantIds.length > 0 ? `?tenantIds=${allTenantIds.join(",")}` : "";
 			const r = await fetch(`${baseUrl}/api/first-impression/published${qs}`, {
 				headers: { Authorization: `Bearer ${apiKey}` },
 			});
@@ -308,7 +309,12 @@ app.get("/api/tenants", async (req, res) => {
 			tenantId: number;
 			published: boolean;
 			recordingCount: number;
-			versions: { version: number; url: string; createdAt: string; slug: string }[];
+			versions: {
+				version: number;
+				url: string;
+				createdAt: string;
+				slug: string;
+			}[];
 			config?: unknown;
 			tenantSnapshot?: unknown;
 		}

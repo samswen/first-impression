@@ -39,7 +39,7 @@ interface NarrationClip {
  * Generate narration text for a timeline event.
  * Returns null for events that shouldn't be narrated (zoom-in/out, etc.)
  */
-function narrationForEvent(
+export function narrationForEvent(
 	event: TimelineEntry,
 	tenantInfo: TenantInfo,
 ): string | null {
@@ -131,6 +131,16 @@ export async function addVoiceover(
 	if (clips.length === 0) {
 		throw new Error("No narration clips generated");
 	}
+
+	// Save clip manifest for later listing
+	const manifest = clips.map((c, i) => ({
+		file: `clip-${i}.mp3`,
+		text: c.text,
+	}));
+	fs.writeFileSync(
+		path.join(voDir, "clips.json"),
+		JSON.stringify(manifest, null, 2),
+	);
 
 	onProgress?.(`${clips.length} clips ready, composing audio mix...`);
 
@@ -236,7 +246,9 @@ export async function addVoiceover(
 	for (let i = 0; i < clips.length; i++) {
 		const delayMs = Math.round(clips[i].startTime * 1000);
 		const inputIdx = i + 1;
-		filterParts.push(`[${inputIdx}:a]adelay=${delayMs}|${delayMs}[a${i}]`);
+		filterParts.push(
+			`[${inputIdx}:a]highpass=f=120,lowpass=f=8000,adelay=${delayMs}|${delayMs}[a${i}]`,
+		);
 		mixInputs.push(`[a${i}]`);
 	}
 

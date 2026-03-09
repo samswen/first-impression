@@ -61,6 +61,9 @@ Create `.env` with:
 RAG_CHATBOT_BASE_URL=https://your-rag-chatbot-url
 FIRST_IMPRESSION_API_KEY=your-api-key
 
+# Auth
+FIRST_IMPRESSION_SECRET=your-auth-secret
+
 # ElevenLabs (text-to-speech)
 ELEVENLABS_API_KEY=your-api-key
 ELEVENLABS_VOICE_ID=your-voice-id          # optional, defaults to "Hope"
@@ -98,6 +101,35 @@ Opens http://localhost:3456 with the recording studio.
 7. **Preview** — renders the demo page in-panel with the final video
 8. **Publish** — uploads to S3 and returns the demo URL
 9. **Outreach** — right panel shows email and SMS templates with copy buttons
+
+### CLI Pipeline
+
+Runs the full 6-step pipeline from the command line.
+
+```bash
+# Full pipeline
+pnpm cli -- --tenant 536222 --url https://example.com --queries "Show me products" "What about returns?"
+
+# Resume from a specific step
+pnpm cli -- --tenant 536222 --recording 2026-03-09T12-33-23 --from 6
+
+# JSON from stdin
+echo '{"tenant":536222,"url":"https://example.com","queries":["Show me products"]}' | pnpm cli
+```
+
+Steps: 1=record, 2=speed, 3=intro/outro, 4=voiceover, 5=compose, 6=publish
+
+| Option | Description |
+|--------|-------------|
+| `--tenant <id>` | Tenant ID (required) |
+| `--url <url>` | Target website URL (required for new recordings) |
+| `--widget-url <url>` | Widget script URL (optional, uses live site widget if omitted) |
+| `--queries "q1" "q2"` | Queries to demo (required for new recordings, space-separated) |
+| `--recording <id>` | Resume an existing recording (required with `--from`) |
+| `--from <step>` | Start from step 1–6 (default: 1) |
+| `--speed <number>` | Speed multiplier (default: 2) |
+| `--headed` | Show browser during recording |
+| `--no-publish` | Stop after compose, skip publish |
 
 ### CLI Recording
 
@@ -161,7 +193,8 @@ trim.ts            FFmpeg trim/concat pipeline
 demo-page.ts       Generates static HTML demo page per tenant
 upload.ts          S3 publisher (video + snapshot + HTML)
 public/index.html  Single-page web UI (recording studio)
-record.ts          CLI entry point
+record.ts          CLI entry point (recording only)
+cli.ts             CLI entry point (full pipeline)
 ```
 
 ### API Endpoints
@@ -191,6 +224,7 @@ record.ts          CLI entry point
 | Script | Description |
 |--------|-------------|
 | `pnpm studio` | Start the web studio (auto-reloads on file changes) |
+| `pnpm cli` | Run the full pipeline from the command line (requires studio running) |
 | `pnpm record` | Run a CLI recording |
 | `pnpm lint` | Run Biome linter and formatter |
 | `pnpm typecheck` | Run TypeScript type checking |

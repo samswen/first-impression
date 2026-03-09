@@ -17,6 +17,7 @@ export interface DemoPageOptions {
 	version?: number; // publish version (e.g. 1, 2, 3)
 	publishedId?: number; // for access tracking pixel
 	trackingUrl?: string; // GCF endpoint for access tracking
+	isPreviewMode?: boolean; // true when widget is not on the live site
 }
 
 export function generateDemoPage(opts: DemoPageOptions): string {
@@ -29,6 +30,7 @@ export function generateDemoPage(opts: DemoPageOptions): string {
 		version,
 		publishedId,
 		trackingUrl,
+		isPreviewMode,
 	} = opts;
 	const { setup, app } = tenantInfo;
 
@@ -254,6 +256,36 @@ export function generateDemoPage(opts: DemoPageOptions): string {
       display: block;
     }
 
+    .play-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: rgba(0,0,0,0.3);
+      border: none;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .play-overlay:hover {
+      background: rgba(0,0,0,0.15);
+    }
+
+    .play-overlay.hidden { display: none; }
+
+    .play-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      color: #c8f64a;
+      font-family: 'Inter', sans-serif;
+    }
+
     .demo-label {
       text-align: center;
       margin-top: 16px;
@@ -452,6 +484,145 @@ export function generateDemoPage(opts: DemoPageOptions): string {
       .channel-grid { grid-template-columns: repeat(2, 1fr); }
     }
 
+    /* --- Try It Live --- */
+    .try-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .try-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 32px;
+    }
+
+    .try-card-full {
+      grid-column: 1 / -1;
+    }
+
+    .try-card-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: rgba(200,246,74,0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+      color: #c8f64a;
+    }
+
+    .try-card h3 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 8px;
+    }
+
+    .try-card > p {
+      font-size: 14px;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
+
+    .try-steps {
+      list-style: none;
+      counter-reset: step;
+    }
+
+    .try-steps li {
+      counter-increment: step;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 10px 0;
+      font-size: 14px;
+      color: rgba(255,255,255,0.75);
+      line-height: 1.5;
+    }
+
+    .try-steps li + li {
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .try-steps li::before {
+      content: counter(step);
+      flex-shrink: 0;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: rgba(200,246,74,0.12);
+      color: #c8f64a;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .try-phone {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: 0.3px;
+    }
+
+    .try-note {
+      margin-top: 16px;
+      padding: 14px 16px;
+      background: rgba(200,246,74,0.06);
+      border: 1px solid rgba(200,246,74,0.12);
+      border-radius: 10px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.55);
+      line-height: 1.6;
+    }
+
+    .try-note strong {
+      color: rgba(255,255,255,0.8);
+    }
+
+    .try-links {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .try-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+
+    .try-btn-primary {
+      background: #4f46e5;
+      color: #fff;
+    }
+
+    .try-btn-primary:hover {
+      background: #6366f1;
+    }
+
+    .try-btn-outline {
+      background: transparent;
+      color: rgba(255,255,255,0.7);
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+
+    .try-btn-outline:hover {
+      border-color: rgba(255,255,255,0.3);
+      color: #fff;
+    }
+
     @media (max-width: 640px) {
       .hero { padding: 64px 0 48px; }
       .hero h1 { font-size: 28px; }
@@ -459,6 +630,7 @@ export function generateDemoPage(opts: DemoPageOptions): string {
       .section-dark, .section-gray, .section-darker { padding: 56px 0; }
       .section-heading h2 { font-size: 24px; }
       .channel-grid { grid-template-columns: 1fr; }
+      .try-grid { grid-template-columns: 1fr; }
       .container, .container-narrow { padding: 0 16px; }
       .context-card { padding: 28px; }
       .cta-section { padding: 64px 0; }
@@ -502,7 +674,21 @@ export function generateDemoPage(opts: DemoPageOptions): string {
         <p>Watch ${esc(assistantName)} guide customers through products, answer questions, and drive conversions on your site.</p>
       </div>
       <div class="demo-video-wrap">
-        <video src="${esc(videoFilename.startsWith("http") ? videoFilename : `${baseUrl}/${videoFilename}`)}" autoplay muted controls playsinline></video>
+        <video id="demoVideo" src="${esc(videoFilename.startsWith("http") ? videoFilename : `${baseUrl}/${videoFilename}`)}" controls playsinline preload="metadata" poster="${snapshotFilename ? `${baseUrl}/${snapshotFilename}` : ""}"></video>
+        <button class="play-overlay" id="playOverlay" aria-label="Play video">
+          <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+            <circle cx="32" cy="32" r="32" fill="rgba(0,0,0,0.55)"/>
+            <polygon points="26,20 26,44 46,32" fill="#fff"/>
+          </svg>
+          <span class="play-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+            </svg>
+            Watch with sound
+          </span>
+        </button>
       </div>
       <p class="demo-label">Recorded live on ${esc(setup.website || tenantInfo.app.homePageUrl || "your website")}</p>
     </div>
@@ -536,6 +722,72 @@ export function generateDemoPage(opts: DemoPageOptions): string {
           title="Introducing XInfer.AI"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowfullscreen></iframe>
+      </div>
+    </div>
+  </section>
+
+  <!-- Try It Live -->
+  <section class="section-darker">
+    <div class="container">
+      <div class="section-heading">
+        <h2>Try It Live</h2>
+        <p>Experience ${esc(assistantName)} across every channel &mdash; web, phone, and SMS.</p>
+      </div>
+      <div class="try-grid">
+
+        <!-- Web Chat -->
+        <div class="try-card">
+          <div class="try-card-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+          </div>
+          <h3>Web Chat &mdash; Text &amp; Voice</h3>
+          ${
+						isPreviewMode
+							? `<p>See a preview of how the AI assistant would look on your website. The page shows a screenshot of your site with the chat widget overlaid &mdash; your actual site has not been modified. Supports text and voice input.</p>`
+							: `<p>Your AI assistant is already live on your website. Visit your site and start a conversation &mdash; look for the chat widget in the bottom corner. It supports both text and voice input.</p>`
+					}
+          <div class="try-links">
+            <a href="${baseUrl}/demo.html" target="_blank" class="try-btn try-btn-primary">${isPreviewMode ? "Open Preview" : "Visit Your Website"} &rarr;</a>
+            ${tenantInfo.subdomain ? `<a href="https://${esc(tenantInfo.subdomain)}.xinfer.ai/chat" target="_blank" class="try-btn try-btn-outline">Standalone Chat</a>` : ""}
+          </div>
+          ${tenantInfo.subdomain ? `<p style="margin-top:12px;font-size:12px;color:rgba(255,255,255,0.35)">Standalone Chat opens the assistant in a full-page view, separate from your website.</p>` : ""}
+        </div>
+
+        <!-- Phone Agent -->
+        <div class="try-card">
+          <div class="try-card-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+            </svg>
+          </div>
+          <h3>AI Phone Agent</h3>
+          <p>Call and speak with the AI agent in real time.</p>
+          <ol class="try-steps">
+            <li>Call our toll-free number <span class="try-phone">1&nbsp;(888)&nbsp;666&#8209;1834</span></li>
+            <li>Enter your account ID <span class="try-phone">${tenantInfo.tenantId}</span> followed by the <strong>#</strong> key</li>
+            <li>You&rsquo;ll be connected to your AI Phone Agent for a live test</li>
+          </ol>
+          <div class="try-note">
+            <strong>Dedicated number:</strong> If a dedicated phone number has been provisioned for your account, callers are connected directly to the AI agent with no IVR menu.
+          </div>
+        </div>
+
+        <!-- SMS Agent -->
+        <div class="try-card try-card-full">
+          <div class="try-card-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/>
+            </svg>
+          </div>
+          <h3>AI SMS Agent</h3>
+          <p>After your first phone call, your number is linked to your account for 30 days. During that period, text <span class="try-phone">1&nbsp;(888)&nbsp;666&#8209;1834</span> to chat with your AI SMS Agent.</p>
+          <div class="try-note">
+            <strong>Note:</strong> SMS agent requires pre-configuration before testing. Contact us if you&rsquo;d like SMS enabled for your account.
+          </div>
+        </div>
+
       </div>
     </div>
   </section>
@@ -606,7 +858,131 @@ export function generateDemoPage(opts: DemoPageOptions): string {
     </div>
   </footer>
 
+<script>
+(function(){
+  var v=document.getElementById('demoVideo');
+  var o=document.getElementById('playOverlay');
+  o.addEventListener('click',function(){
+    v.muted=false;
+    v.play();
+    o.classList.add('hidden');
+  });
+  v.addEventListener('play',function(){
+    o.classList.add('hidden');
+  });
+  v.addEventListener('pause',function(){
+    if(v.currentTime>0&&!v.ended)return;
+    o.classList.remove('hidden');
+  });
+})();
+</script>
 ${publishedId && trackingUrl ? `<!-- Access tracking -->\n<img src="${esc(trackingUrl)}?pid=${publishedId}" width="1" height="1" alt="" style="position:absolute;left:-9999px" />` : ""}
+</body>
+</html>`;
+}
+
+export interface DemoInteractivePageOptions {
+	targetUrl: string;
+	snapshotUrl?: string; // when set with widgetUrl, renders preview mode
+	widgetUrl?: string; // widget script to inject over the snapshot
+}
+
+export function generateDemoInteractivePage(
+	opts: DemoInteractivePageOptions,
+): string {
+	const { targetUrl, snapshotUrl, widgetUrl } = opts;
+
+	// Preview mode: snapshot background + widget + disclosure banner
+	if (snapshotUrl && widgetUrl) {
+		return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Assistant Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; font-family: 'Inter', sans-serif; }
+    body {
+      background-color: #1a1a1a;
+      background-image: url('${esc(snapshotUrl)}');
+      background-size: 1920px 1080px;
+      background-repeat: no-repeat;
+      background-position: right top;
+    }
+    @media (max-height: 1080px) {
+      body { background-size: auto 100vh; }
+    }
+    .preview-banner {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 999999;
+      background: rgba(17,24,39,0.92);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-bottom: 1px solid rgba(200,246,74,0.2);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+    .preview-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: rgba(200,246,74,0.15);
+      border: 1px solid rgba(200,246,74,0.3);
+      color: #c8f64a;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .preview-text {
+      font-size: 13px;
+      color: rgba(255,255,255,0.7);
+    }
+    .preview-dismiss {
+      position: absolute;
+      right: 16px;
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.4);
+      cursor: pointer;
+      font-size: 18px;
+      padding: 4px;
+      line-height: 1;
+    }
+    .preview-dismiss:hover { color: rgba(255,255,255,0.7); }
+  </style>
+</head>
+<body>
+  <div class="preview-banner" id="previewBanner">
+    <span class="preview-badge">Preview</span>
+    <span class="preview-text">This is a simulation &mdash; your website has not been modified. The background is a screenshot of <strong>${esc(targetUrl)}</strong>.</span>
+    <button class="preview-dismiss" onclick="document.getElementById('previewBanner').remove()" title="Dismiss">&times;</button>
+  </div>
+  <script src="${esc(widgetUrl)}" async></script>
+</body>
+</html>`;
+	}
+
+	// Default: redirect to the live site (widget already installed)
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="refresh" content="0;url=${esc(targetUrl)}">
+  <title>Redirecting\u2026</title>
+</head>
+<body>
+  <p>Redirecting to <a href="${esc(targetUrl)}">${esc(targetUrl)}</a>\u2026</p>
 </body>
 </html>`;
 }

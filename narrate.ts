@@ -142,6 +142,7 @@ export async function generateIntro(
 	onProgress?.("Generating voiceover...");
 	const audioBuffer = await textToSpeech({ text: narrative });
 	fs.writeFileSync(audioPath, audioBuffer);
+	fs.writeFileSync(path.join(recordingDir, "intro-audio.txt"), narrative);
 
 	// 3. Get audio duration
 	const { stdout: durationOut } = await execP("ffprobe", [
@@ -241,6 +242,7 @@ export async function generateOutro(
 	onProgress?.("Generating closing voiceover...");
 	const audioBuffer = await textToSpeech({ text: narrative });
 	fs.writeFileSync(audioPath, audioBuffer);
+	fs.writeFileSync(path.join(recordingDir, "outro-audio.txt"), narrative);
 
 	// 3. Get audio duration
 	const { stdout: durationOut } = await execP("ffprobe", [

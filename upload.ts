@@ -6,8 +6,13 @@
  */
 
 import "dotenv/config";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
-import { type DemoPageOptions, generateDemoPage } from "./demo-page";
+import {
+	type DemoPageOptions,
+	generateDemoInteractivePage,
+	generateDemoPage,
+} from "./demo-page";
 import type { TenantInfo } from "./tenant";
 
 export interface PublishOptions {
@@ -17,6 +22,9 @@ export interface PublishOptions {
 	videoFile: string; // filename e.g. "final.webm"
 	snapshotPath?: string; // absolute path to snapshot.png (optional)
 	config?: Record<string, unknown>; // recording inputs for reproduction
+	targetUrl?: string; // target site URL for interactive demo redirect
+	widgetUrl?: string; // widget script URL (when not already on site)
+	force?: boolean; // skip duplicate detection, always publish new version
 }
 
 export interface PublishResult {
@@ -39,6 +47,7 @@ interface PublishApiRequest {
 	videoFile?: string;
 	config?: Record<string, unknown>;
 	tenantSnapshot?: Record<string, unknown>;
+	contentHash?: string;
 }
 
 interface PublishApiResponse {
@@ -46,6 +55,7 @@ interface PublishApiResponse {
 	baseUrl: string;
 	publishedId?: number;
 	version?: number;
+	duplicate?: boolean;
 }
 
 async function callPublishApi(
@@ -106,8 +116,23 @@ async function uploadWithPresignedUrl(
 export async function publishDemo(
 	opts: PublishOptions,
 ): Promise<PublishResult> {
-	const { tenantInfo, tenantSlug, videoPath, videoFile, snapshotPath, config } =
-		opts;
+	const {
+		tenantInfo,
+		tenantSlug,
+		videoPath,
+		videoFile,
+		snapshotPath,
+		config,
+		targetUrl,
+		widgetUrl,
+		force,
+	} = opts;
+
+	// Read video and compute content hash for dedup (skip when forcing)
+	const videoBuffer = fs.readFileSync(videoPath);
+	const contentHash = force
+		? undefined
+		: createHash("md5").update(videoBuffer).digest("hex");
 
 	// Build file list for presigned URLs
 	const files: { name: string; contentType: string }[] = [
@@ -120,20 +145,28 @@ export async function publishDemo(
 		files.push({ name: "snapshot.png", contentType: "image/png" });
 	}
 
-	// Get presigned URLs + record the publish
-	const { uploads, baseUrl, publishedId, version } = await callPublishApi(
-		tenantInfo.tenantId,
-		{
+	if (targetUrl) {
+		files.push({ name: "demo.html", contentType: "text/html; charset=utf-8" });
+	}
+
+	// Get presigned URLs + record the publish (API may return duplicate)
+	const { uploads, baseUrl, publishedId, version, duplicate } =
+		await callPublishApi(tenantInfo.tenantId, {
 			slug: tenantSlug,
 			files,
 			videoFile,
 			config,
 			tenantSnapshot: tenantInfo as unknown as Record<string, unknown>,
-		},
-	);
+			contentHash,
+		});
+
+	// If the API detected identical content, skip all uploads
+	if (duplicate) {
+		console.log(`[Publish] Duplicate detected — reusing v${version}`);
+		return { url: baseUrl, publishedId: publishedId ?? undefined, version };
+	}
 
 	// 1. Upload video
-	const videoBuffer = fs.readFileSync(videoPath);
 	await uploadWithPresignedUrl(
 		uploads["video.webm"].url,
 		videoBuffer,
@@ -161,6 +194,7 @@ export async function publishDemo(
 		version,
 		publishedId: publishedId ?? undefined,
 		trackingUrl: process.env.FI_ACCESS_URL,
+		isPreviewMode: !!widgetUrl,
 	};
 	const html = generateDemoPage(pageOpts);
 
@@ -171,7 +205,24 @@ export async function publishDemo(
 		"text/html; charset=utf-8",
 	);
 
-	// 5. Upload directory key (same HTML, for bare /demo/slug/vN access)
+	// 5. Generate and upload demo.html
+	if (targetUrl) {
+		const demoHtml = generateDemoInteractivePage({
+			targetUrl,
+			snapshotUrl:
+				widgetUrl && hasSnapshot
+					? uploads["snapshot.png"].publicUrl
+					: undefined,
+			widgetUrl,
+		});
+		await uploadWithPresignedUrl(
+			uploads["demo.html"].url,
+			demoHtml,
+			"text/html; charset=utf-8",
+		);
+	}
+
+	// 6. Upload directory key (same HTML, for bare /demo/slug/vN access)
 	if (uploads.__dir__) {
 		await uploadWithPresignedUrl(
 			uploads.__dir__.url,
