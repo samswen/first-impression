@@ -294,7 +294,7 @@ export function generateDemoPage(opts: DemoPageOptions): string {
       line-height: 1.7;
     }
 
-    /* --- YouTube thumbnail link --- */
+    /* --- YouTube embed --- */
     .yt-wrap {
       position: relative;
       width: 100%;
@@ -304,6 +304,14 @@ export function generateDemoPage(opts: DemoPageOptions): string {
       overflow: hidden;
       aspect-ratio: 16 / 9;
       box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+    }
+
+    .yt-wrap iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
     }
 
     /* --- Omnichannel grid --- */
@@ -522,10 +530,13 @@ export function generateDemoPage(opts: DemoPageOptions): string {
         <h2>Introducing XInfer.AI</h2>
         <p>Go live with AI in hours, not months.</p>
       </div>
-      <a class="yt-wrap" href="https://www.youtube.com/watch?v=mK-ymnuvIEQ" target="_blank" rel="noopener noreferrer" style="display:block;text-decoration:none">
-        <img src="https://img.youtube.com/vi/mK-ymnuvIEQ/maxresdefault.jpg" alt="Introducing XInfer.AI" style="width:100%;height:100%;object-fit:cover">
-        <svg style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:72px;height:72px;opacity:0.9;filter:drop-shadow(0 2px 8px rgba(0,0,0,0.5))" viewBox="0 0 68 48"><path d="M66.52 7.74c-.78-2.93-2.49-5.41-5.42-6.19C55.79.13 34 0 34 0S12.21.13 6.9 1.55c-2.93.78-4.63 3.26-5.42 6.19C.06 13.05 0 24 0 24s.06 10.95 1.48 16.26c.78 2.93 2.49 5.41 5.42 6.19C12.21 47.87 34 48 34 48s21.79-.13 27.1-1.55c2.93-.78 4.64-3.26 5.42-6.19C67.94 34.95 68 24 68 24s-.06-10.95-1.48-16.26z" fill="red"/><path d="M45 24 27 14v20" fill="#fff"/></svg>
-      </a>
+      <div class="yt-wrap">
+        <iframe
+          src="https://www.youtube.com/embed/mK-ymnuvIEQ?autoplay=0&vq=hd1080"
+          title="Introducing XInfer.AI"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowfullscreen></iframe>
+      </div>
     </div>
   </section>
 
