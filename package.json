@@ -7,10 +7,13 @@
     "studio": "tsx watch --exclude 'recordings/**' --exclude '.voice-cache/**' server.ts",
     "lint": "npx @biomejs/biome check --write .",
     "cli": "tsx cli.ts",
+    "worker": "tsx worker.ts",
     "typecheck": "npx tsc --noEmit",
     "test": "npm run lint && npm run typecheck"
   },
   "dependencies": {
+    "@aws-sdk/client-sns": "^3.750.0",
+    "@aws-sdk/client-sqs": "^3.750.0",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.3.1",
     "express": "^5.1.0",

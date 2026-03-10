@@ -174,6 +174,47 @@ Each CLI run saves `state.json` in the recording directory after every step. Thi
 }
 ```
 
+### Queue Worker
+
+Processes tasks from an SQS queue unattended. Designed to run as a systemd service on a spot EC2 instance.
+
+```bash
+pnpm worker
+```
+
+**Loop**: long-polls SQS → spawns `tsx cli.ts` per task → deletes message on success → sends SNS on failure (including 30-minute timeout) → shuts down EC2 when queue is empty.
+
+Add `.env` variables:
+
+```env
+SQS_QUEUE_URL=https://sqs.us-east-2.amazonaws.com/873772320074/first-impression
+SNS_FAILURE_TOPIC_ARN=arn:aws:sns:us-east-2:873772320074:first-impression-failure
+AWS_REGION=us-east-2
+```
+
+**Queue task schema** (JSON message body):
+
+```json
+{
+  "tenantId": 536222,
+  "email": "sam@xinfer.ai",
+  "url": "https://example.com",
+  "widgetUrl": "https://demo-agent.xinfer.ai/widget.js",
+  "queries": ["Show me products", "What about returns?"],
+  "speed": 2,
+  "force": true
+}
+```
+
+Only `tenantId` is required; all other fields are optional overrides.
+
+**Infrastructure** (in `cicd-run`):
+- `fi-ami-setup.sh` — AMI setup: Ubuntu 24.04 ARM64, Node.js, FFmpeg, Playwright, systemd service
+- `lambda/fiQueueChecker.js` — hourly Lambda checks queue depth, launches spot instance if messages pending
+- `boot.sh` — `ExecStartPre` script that runs `git pull` + `pnpm install` on each boot
+
+**SQS queue settings**: visibility timeout 1800s (30 min), long poll 20s, retention 4 days.
+
 ### CLI Recording
 
 ```bash
@@ -240,6 +281,8 @@ upload.ts          S3 publisher (video + snapshot + HTML)
 public/index.html  Single-page web UI (recording studio)
 record.ts          CLI entry point (recording only)
 cli.ts             CLI entry point (autonomous 7-step pipeline)
+worker.ts          SQS queue worker (polls, spawns CLI, SNS on failure, auto-shutdown)
+boot.sh            EC2 boot script (git pull + pnpm install)
 ```
 
 ### API Endpoints
@@ -270,6 +313,7 @@ cli.ts             CLI entry point (autonomous 7-step pipeline)
 |--------|-------------|
 | `pnpm studio` | Start the web studio (auto-reloads on file changes) |
 | `pnpm cli` | Run the full autonomous pipeline from the command line |
+| `pnpm worker` | Start the SQS queue worker |
 | `pnpm record` | Run a CLI recording |
 | `pnpm lint` | Run Biome linter and formatter |
 | `pnpm typecheck` | Run TypeScript type checking |
