@@ -928,7 +928,7 @@ app.post("/api/recordings/:id/preview", async (req, res) => {
 	const dir = requireDir(req, req.params.id, res);
 	if (!dir) return;
 
-	const { tenantId, tagline, inventoryDescription } = req.body;
+	const { tenantId, tagline, inventoryDescription, subtitle } = req.body;
 	if (!tenantId || Number.isNaN(Number(tenantId))) {
 		return res.status(400).json({ error: "tenantId required (number)" });
 	}
@@ -941,6 +941,7 @@ app.post("/api/recordings/:id/preview", async (req, res) => {
 		const html = await generatePreview(dir, Number(tenantId), videoUrl, {
 			tagline,
 			inventoryDescription,
+			subtitle,
 		});
 		res.setHeader("Content-Type", "text/html; charset=utf-8");
 		res.send(html);
@@ -956,7 +957,7 @@ app.post("/api/recordings/:id/publish", async (req, res) => {
 	const dir = requireDir(req, req.params.id, res);
 	if (!dir) return;
 
-	const { tenantId, tagline, inventoryDescription } = req.body;
+	const { tenantId, tagline, inventoryDescription, subtitle } = req.body;
 	if (!tenantId || Number.isNaN(Number(tenantId))) {
 		return res.status(400).json({ error: "tenantId required (number)" });
 	}
@@ -966,6 +967,7 @@ app.post("/api/recordings/:id/publish", async (req, res) => {
 			userId: req.user?.userId,
 			tagline,
 			inventoryDescription,
+			subtitle,
 		});
 		res.json(result);
 

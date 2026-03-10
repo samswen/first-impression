@@ -26,7 +26,11 @@ const execP = promisify(execFile);
 /** Apply user-edited business fields to tenant info before demo page generation. */
 function applyBusinessOverrides(
 	info: TenantInfo,
-	overrides: { tagline?: string; inventoryDescription?: string },
+	overrides: {
+		tagline?: string;
+		inventoryDescription?: string;
+		subtitle?: string;
+	},
 ): void {
 	if (overrides.tagline !== undefined) info.setup.tagline = overrides.tagline;
 	if (overrides.inventoryDescription !== undefined)
@@ -789,27 +793,45 @@ export async function composeVideo(
 	if (signal?.aborted) throw new Error("Cancelled");
 	onProgress?.("Concatenating videos...");
 
-	const { stderr } = await execP(
-		"ffmpeg",
-		[
-			"-f",
-			"concat",
-			"-safe",
-			"0",
-			"-i",
-			concatListPath,
-			"-c",
-			"copy",
-			"-y",
-			outputPath,
-		],
-		{ maxBuffer: 10 * 1024 * 1024 },
-	);
+	// Try stream copy first (fast), fall back to re-encode if it fails
+	let composed = false;
+	try {
+		onProgress?.("Concatenating (stream copy)...");
+		await execP(
+			"ffmpeg",
+			[
+				"-f", "concat", "-safe", "0",
+				"-i", concatListPath,
+				"-c", "copy",
+				"-y", outputPath,
+			],
+			{ maxBuffer: 10 * 1024 * 1024 },
+		);
+		if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+			composed = true;
+		}
+	} catch {
+		// Stream copy failed (VP9 superframe / Opus header mismatch) — re-encode
+		if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+	}
+
+	if (!composed) {
+		onProgress?.("Re-encoding (stream copy failed)...");
+		await execP(
+			"ffmpeg",
+			[
+				"-f", "concat", "-safe", "0",
+				"-i", concatListPath,
+				"-c:v", "libvpx-vp9", "-b:v", "2M", "-pix_fmt", "yuv420p",
+				"-c:a", "libopus",
+				"-y", outputPath,
+			],
+			{ maxBuffer: 10 * 1024 * 1024, timeout: 5 * 60 * 1000 },
+		);
+	}
 
 	if (!fs.existsSync(outputPath)) {
-		throw new Error(
-			`Compose failed: ${stderr.split("\n").slice(-3).join(" ")}`,
-		);
+		throw new Error("Compose failed: output file not created");
 	}
 
 	const stat = fs.statSync(outputPath);
@@ -822,7 +844,11 @@ export async function generatePreview(
 	_dir: string,
 	tenantId: number,
 	videoUrl: string,
-	overrides?: { tagline?: string; inventoryDescription?: string },
+	overrides?: {
+		tagline?: string;
+		inventoryDescription?: string;
+		subtitle?: string;
+	},
 ): Promise<string> {
 	const tenantInfo = await fetchTenantInfo(tenantId);
 	if (overrides) applyBusinessOverrides(tenantInfo, overrides);
@@ -834,6 +860,7 @@ export async function generatePreview(
 		videoFilename: videoUrl,
 		assetsBaseUrl,
 		tenantSlug,
+		subtitle: overrides?.subtitle,
 	});
 }
 
@@ -882,6 +909,7 @@ export async function publishRecording(
 		userId?: number;
 		tagline?: string;
 		inventoryDescription?: string;
+		subtitle?: string;
 	},
 ): Promise<PublishResult> {
 	const bestVideo = pickBestVideo(dir);
@@ -917,6 +945,7 @@ export async function publishRecording(
 		widgetUrl: config?.widgetUrl as string | undefined,
 		force: opts?.force,
 		userId: opts?.userId,
+		subtitle: opts?.subtitle,
 	});
 
 	return {

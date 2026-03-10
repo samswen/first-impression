@@ -27,6 +27,7 @@ export interface PublishOptions {
 	widgetUrl?: string; // widget script URL (when not already on site)
 	force?: boolean; // skip duplicate detection, always publish new version
 	userId?: number; // first-impression user ID for publish attribution
+	subtitle?: string; // AI-generated hero subtitle for demo page
 }
 
 export interface PublishResult {
@@ -217,6 +218,7 @@ export async function publishDemo(
 		publishedId: publishedId ?? undefined,
 		trackingUrl: process.env.FI_ACCESS_URL,
 		isPreviewMode: !!widgetUrl,
+		subtitle: opts.subtitle,
 	};
 	const html = generateDemoPage(pageOpts);
 

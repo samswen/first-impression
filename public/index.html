@@ -1269,6 +1269,7 @@
       headed: document.getElementById('rec-headed').checked,
       introText: introTextValue,
       outroText: outroTextValue,
+      subtitle: subtitleValue,
       tagline: taglineValue,
       inventoryDescription: inventoryDescriptionValue,
     };
@@ -1283,6 +1284,7 @@
         queries: formData.queries,
         introText: formData.introText,
         outroText: formData.outroText,
+        subtitle: formData.subtitle,
         tagline: formData.tagline,
         inventoryDescription: formData.inventoryDescription,
         taglineOriginal: taglineOriginal,
@@ -1341,6 +1343,7 @@
     // Restore per-tenant state, or clear for fresh auto-populate from API
     introTextValue = cfg?.introText || '';
     outroTextValue = cfg?.outroText || '';
+    subtitleValue = cfg?.subtitle || '';
     taglineValue = cfg?.tagline || '';
     inventoryDescriptionValue = cfg?.inventoryDescription || '';
     taglineOriginal = cfg?.taglineOriginal || '';
@@ -1350,10 +1353,12 @@
     // inside saveFormState() won't read stale values from the previous tenant
     const introEl = document.getElementById('rec-intro-text');
     const outroEl = document.getElementById('rec-outro-text');
+    const subEl = document.getElementById('biz-subtitle');
     const tagEl = document.getElementById('biz-tagline');
     const descEl = document.getElementById('biz-description');
     if (introEl) introEl.value = introTextValue;
     if (outroEl) outroEl.value = outroTextValue;
+    if (subEl) subEl.value = subtitleValue;
     if (tagEl) tagEl.value = taglineValue;
     if (descEl) descEl.value = inventoryDescriptionValue;
 
@@ -1488,6 +1493,8 @@
     if (localForm?.introText) introTextValue = localForm.introText;
     else populateIntroOutroDefaults(info, true);
     if (localForm?.outroText) outroTextValue = localForm.outroText;
+    if (localForm?.subtitle !== undefined) subtitleValue = localForm.subtitle;
+    else subtitleValue = '';
     if (localForm?.tagline !== undefined) taglineValue = localForm.tagline;
     else taglineValue = info.setup?.tagline || info.app?.greetTitle || '';
     if (localForm?.inventoryDescription !== undefined) inventoryDescriptionValue = localForm.inventoryDescription;
@@ -1497,10 +1504,12 @@
 
     // Update DOM fields if the editor panel is open, so syncBusinessFromDOM()
     // inside saveFormState() reads the correct values
+    const subEl = document.getElementById('biz-subtitle');
     const tagEl = document.getElementById('biz-tagline');
     const descEl = document.getElementById('biz-description');
     const introEl = document.getElementById('rec-intro-text');
     const outroEl = document.getElementById('rec-outro-text');
+    if (subEl) subEl.value = subtitleValue;
     if (tagEl) tagEl.value = taglineValue;
     if (descEl) descEl.value = inventoryDescriptionValue;
     if (introEl) introEl.value = introTextValue;
@@ -1564,16 +1573,28 @@
   }
 
   // --- Business fields state ---
+  let subtitleValue = '';
   let taglineValue = '';
   let inventoryDescriptionValue = '';
   let taglineOriginal = '';
   let inventoryDescriptionOriginal = '';
 
   function syncBusinessFromDOM() {
+    const subEl = document.getElementById('biz-subtitle');
     const tagEl = document.getElementById('biz-tagline');
     const descEl = document.getElementById('biz-description');
+    if (subEl) subtitleValue = subEl.value;
     if (tagEl) taglineValue = tagEl.value;
     if (descEl) inventoryDescriptionValue = descEl.value;
+  }
+
+  function defaultSubtitleText(info) {
+    const assistantName = info.setup?.assistantName || info.app?.title || 'the AI assistant';
+    const businessName = info.setup?.businessName || info.app?.title || 'your business';
+    const hasProducts = info.catalog?.totalProducts > 0;
+    return hasProducts
+      ? `A personalized demo of ${assistantName} — an AI-powered shopping assistant built for ${businessName}, helping customers discover products, get recommendations, and make purchases.`
+      : `A personalized demo of ${assistantName} — an AI-powered assistant built for ${businessName}, helping visitors learn about services, get answers, and take action.`;
   }
 
   function defaultIntroText(info) {
@@ -1589,6 +1610,9 @@
   }
 
   function populateIntroOutroDefaults(info, force = false) {
+    if (force || !subtitleValue.trim()) {
+      subtitleValue = defaultSubtitleText(info);
+    }
     if (force || !introTextValue.trim()) {
       introTextValue = defaultIntroText(info);
     }
@@ -1596,8 +1620,10 @@
       outroTextValue = defaultOutroText(info);
     }
     // Update DOM if fields are visible
+    const subEl = document.getElementById('biz-subtitle');
     const introEl = document.getElementById('rec-intro-text');
     const outroEl = document.getElementById('rec-outro-text');
+    if (subEl) subEl.value = subtitleValue;
     if (introEl) introEl.value = introTextValue;
     if (outroEl) outroEl.value = outroTextValue;
   }
@@ -1652,8 +1678,10 @@
 
         // Update DOM fields if the editor panel is open, so syncBusinessFromDOM()
         // inside saveFormState() reads the correct values
+        const subEl = document.getElementById('biz-subtitle');
         const tagEl = document.getElementById('biz-tagline');
         const descEl = document.getElementById('biz-description');
+        if (subEl) subEl.value = subtitleValue;
         if (tagEl) tagEl.value = taglineValue;
         if (descEl) descEl.value = inventoryDescriptionValue;
 
@@ -1682,13 +1710,14 @@
   function restoreFormState() {
     const state = loadState();
     if (!state.form) return;
-    const { url, widgetUrl, tenantId, queries, headed, introText, outroText, tagline, inventoryDescription } = state.form;
+    const { url, widgetUrl, tenantId, queries, headed, introText, outroText, subtitle, tagline, inventoryDescription } = state.form;
     if (url) document.getElementById('rec-url').value = url;
     document.getElementById('rec-widget-url').value = widgetUrl || '';
     if (tenantId) document.getElementById('rec-tenant-id').value = tenantId;
     if (headed) document.getElementById('rec-headed').checked = headed;
     if (introText) introTextValue = introText;
     if (outroText) outroTextValue = outroText;
+    if (subtitle) subtitleValue = subtitle;
     if (tagline) taglineValue = tagline;
     if (inventoryDescription) inventoryDescriptionValue = inventoryDescription;
     if (queries && queries.length > 0) {
@@ -1844,6 +1873,7 @@
     syncIntroOutroFromDOM();
     syncBusinessFromDOM();
     const overrides = {};
+    if (subtitleValue.trim()) overrides.subtitle = subtitleValue;
     if (taglineValue.trim()) overrides.tagline = taglineValue;
     if (inventoryDescriptionValue.trim()) overrides.inventoryDescription = inventoryDescriptionValue;
     return overrides;
@@ -1873,6 +1903,10 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/><circle cx="12" cy="12" r="3"/></svg>
           Generate with AI
         </button>
+      </div>
+      <div class="field">
+        <label for="biz-subtitle">Subtitle</label>
+        <textarea id="biz-subtitle" rows="2" placeholder="Hero subtitle for the demo page">${subtitleValue.replace(/</g, '&lt;')}</textarea>
       </div>
       <div class="field">
         <label for="rec-intro-text">Intro Text</label>
@@ -1915,6 +1949,10 @@
       outroTextValue = this.value;
       saveFormState();
     });
+    document.getElementById('biz-subtitle').addEventListener('input', function() {
+      subtitleValue = this.value;
+      saveFormState();
+    });
     document.getElementById('biz-tagline').addEventListener('input', function() {
       taglineValue = this.value;
       saveFormState();
@@ -1951,6 +1989,7 @@
       const data = await res.json();
 
       // Populate fields
+      subtitleValue = data.subtitle || '';
       introTextValue = data.intro || '';
       outroTextValue = data.outro || '';
       if (data.queries && data.queries.length > 0) {
@@ -1958,8 +1997,10 @@
       }
 
       // Update DOM
+      const subEl = document.getElementById('biz-subtitle');
       const introEl = document.getElementById('rec-intro-text');
       const outroEl = document.getElementById('rec-outro-text');
+      if (subEl) subEl.value = subtitleValue;
       if (introEl) introEl.value = introTextValue;
       if (outroEl) outroEl.value = outroTextValue;
       renderQueryList();

@@ -18,6 +18,7 @@ export interface DemoPageOptions {
 	publishedId?: number; // for access tracking pixel
 	trackingUrl?: string; // GCF endpoint for access tracking
 	isPreviewMode?: boolean; // true when widget is not on the live site
+	subtitle?: string; // AI-generated hero subtitle
 }
 
 export function generateDemoPage(opts: DemoPageOptions): string {
@@ -31,6 +32,7 @@ export function generateDemoPage(opts: DemoPageOptions): string {
 		publishedId,
 		trackingUrl,
 		isPreviewMode,
+		subtitle,
 	} = opts;
 	const { setup, app } = tenantInfo;
 
@@ -659,7 +661,7 @@ export function generateDemoPage(opts: DemoPageOptions): string {
     <div class="hero-content container">
       <div class="hero-badge">Personalized Demo</div>
       <h1>See how <em>${esc(businessName)}</em> can transform customer experience with AI</h1>
-      <p>A personalized demo of ${esc(assistantName)} &mdash; an AI-powered assistant built for ${esc(businessName)}, delivering real-time product guidance and conversational shopping.</p>
+      <p>${esc(subtitle || '')}</p>
     </div>
   </section>
 
@@ -668,7 +670,6 @@ export function generateDemoPage(opts: DemoPageOptions): string {
     <div class="container-narrow">
       <div class="section-heading">
         <h2>Your AI Assistant in Action</h2>
-        <p>Watch ${esc(assistantName)} guide customers through products, answer questions, and drive conversions on your site.</p>
       </div>
       <div class="demo-video-wrap">
         <video id="demoVideo" src="${esc(videoFilename.startsWith("http") ? videoFilename : `${baseUrl}/${videoFilename}`)}" controls playsinline preload="metadata" poster="${snapshotFilename ? `${baseUrl}/${snapshotFilename}` : ""}"></video>
