@@ -26,6 +26,12 @@ export interface TenantInfo {
 		suggestedActions: string[];
 		logo: string | null;
 	};
+	catalog?: {
+		totalProducts: number;
+		topCategory: string | null;
+		topCategoryCount: number;
+		sampleProducts: string[];
+	};
 }
 
 export async function fetchTenantInfo(tenantId: number): Promise<TenantInfo> {

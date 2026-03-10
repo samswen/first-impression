@@ -21,10 +21,12 @@ export interface PublishOptions {
 	videoPath: string; // absolute path to the video file on disk
 	videoFile: string; // filename e.g. "final.webm"
 	snapshotPath?: string; // absolute path to snapshot.png (optional)
+	snapshotMobilePath?: string; // absolute path to snapshot-mobile.png (optional)
 	config?: Record<string, unknown>; // recording inputs for reproduction
 	targetUrl?: string; // target site URL for interactive demo redirect
 	widgetUrl?: string; // widget script URL (when not already on site)
 	force?: boolean; // skip duplicate detection, always publish new version
+	userId?: number; // first-impression user ID for publish attribution
 }
 
 export interface PublishResult {
@@ -48,6 +50,7 @@ interface PublishApiRequest {
 	config?: Record<string, unknown>;
 	tenantSnapshot?: Record<string, unknown>;
 	contentHash?: string;
+	userId?: number;
 }
 
 interface PublishApiResponse {
@@ -122,10 +125,12 @@ export async function publishDemo(
 		videoPath,
 		videoFile,
 		snapshotPath,
+		snapshotMobilePath,
 		config,
 		targetUrl,
 		widgetUrl,
 		force,
+		userId,
 	} = opts;
 
 	// Read video and compute content hash for dedup (skip when forcing)
@@ -145,6 +150,12 @@ export async function publishDemo(
 		files.push({ name: "snapshot.png", contentType: "image/png" });
 	}
 
+	const hasMobileSnapshot =
+		snapshotMobilePath && fs.existsSync(snapshotMobilePath);
+	if (hasMobileSnapshot) {
+		files.push({ name: "snapshot-mobile.png", contentType: "image/png" });
+	}
+
 	if (targetUrl) {
 		files.push({ name: "demo.html", contentType: "text/html; charset=utf-8" });
 	}
@@ -158,6 +169,7 @@ export async function publishDemo(
 			config,
 			tenantSnapshot: tenantInfo as unknown as Record<string, unknown>,
 			contentHash,
+			userId,
 		});
 
 	// If the API detected identical content, skip all uploads
@@ -179,6 +191,16 @@ export async function publishDemo(
 		await uploadWithPresignedUrl(
 			uploads["snapshot.png"].url,
 			snapBuffer,
+			"image/png",
+		);
+	}
+
+	// 2b. Upload mobile snapshot if exists
+	if (hasMobileSnapshot) {
+		const mobileSnapBuffer = fs.readFileSync(snapshotMobilePath);
+		await uploadWithPresignedUrl(
+			uploads["snapshot-mobile.png"].url,
+			mobileSnapBuffer,
 			"image/png",
 		);
 	}
@@ -212,6 +234,10 @@ export async function publishDemo(
 			snapshotUrl:
 				widgetUrl && hasSnapshot
 					? uploads["snapshot.png"].publicUrl
+					: undefined,
+			snapshotMobileUrl:
+				widgetUrl && hasMobileSnapshot
+					? uploads["snapshot-mobile.png"].publicUrl
 					: undefined,
 			widgetUrl,
 		});

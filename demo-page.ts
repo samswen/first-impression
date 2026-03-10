@@ -326,24 +326,21 @@ export function generateDemoPage(opts: DemoPageOptions): string {
       line-height: 1.7;
     }
 
-    /* --- YouTube embed --- */
-    .yt-wrap {
+    /* --- Intro video --- */
+    .intro-video-wrap {
       position: relative;
       width: 100%;
       max-width: 896px;
       margin: 0 auto;
       border-radius: 16px;
       overflow: hidden;
-      aspect-ratio: 16 / 9;
-      box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+      background: #111;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06);
     }
 
-    .yt-wrap iframe {
-      position: absolute;
-      inset: 0;
+    .intro-video-wrap video {
       width: 100%;
-      height: 100%;
-      border: 0;
+      display: block;
     }
 
     /* --- Omnichannel grid --- */
@@ -716,12 +713,22 @@ export function generateDemoPage(opts: DemoPageOptions): string {
         <h2>Introducing XInfer.AI</h2>
         <p>Go live with AI in hours, not months.</p>
       </div>
-      <div class="yt-wrap">
-        <iframe
-          src="https://www.youtube-nocookie.com/embed/mK-ymnuvIEQ?autoplay=0&vq=hd1080"
-          title="Introducing XInfer.AI"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowfullscreen></iframe>
+      <div class="intro-video-wrap">
+        <video id="introVideo" src="https://assets.xinfer.ai/videos/intro-xinfer-ai.mp4" controls playsinline preload="metadata"></video>
+        <button class="play-overlay" id="introPlayOverlay" aria-label="Play video">
+          <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+            <circle cx="32" cy="32" r="32" fill="rgba(0,0,0,0.55)"/>
+            <polygon points="26,20 26,44 46,32" fill="#fff"/>
+          </svg>
+          <span class="play-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+            </svg>
+            Watch with sound
+          </span>
+        </button>
       </div>
     </div>
   </section>
@@ -860,20 +867,25 @@ export function generateDemoPage(opts: DemoPageOptions): string {
 
 <script>
 (function(){
-  var v=document.getElementById('demoVideo');
-  var o=document.getElementById('playOverlay');
-  o.addEventListener('click',function(){
-    v.muted=false;
-    v.play();
-    o.classList.add('hidden');
-  });
-  v.addEventListener('play',function(){
-    o.classList.add('hidden');
-  });
-  v.addEventListener('pause',function(){
-    if(v.currentTime>0&&!v.ended)return;
-    o.classList.remove('hidden');
-  });
+  function initClickToPlay(videoId, overlayId) {
+    var v=document.getElementById(videoId);
+    var o=document.getElementById(overlayId);
+    if(!v||!o)return;
+    o.addEventListener('click',function(){
+      v.muted=false;
+      v.play();
+      o.classList.add('hidden');
+    });
+    v.addEventListener('play',function(){
+      o.classList.add('hidden');
+    });
+    v.addEventListener('pause',function(){
+      if(v.currentTime>0&&!v.ended)return;
+      o.classList.remove('hidden');
+    });
+  }
+  initClickToPlay('demoVideo','playOverlay');
+  initClickToPlay('introVideo','introPlayOverlay');
 })();
 </script>
 ${publishedId && trackingUrl ? `<!-- Access tracking -->\n<img src="${esc(trackingUrl)}?pid=${publishedId}" width="1" height="1" alt="" style="position:absolute;left:-9999px" />` : ""}
@@ -884,13 +896,14 @@ ${publishedId && trackingUrl ? `<!-- Access tracking -->\n<img src="${esc(tracki
 export interface DemoInteractivePageOptions {
 	targetUrl: string;
 	snapshotUrl?: string; // when set with widgetUrl, renders preview mode
+	snapshotMobileUrl?: string; // mobile snapshot for responsive preview
 	widgetUrl?: string; // widget script to inject over the snapshot
 }
 
 export function generateDemoInteractivePage(
 	opts: DemoInteractivePageOptions,
 ): string {
-	const { targetUrl, snapshotUrl, widgetUrl } = opts;
+	const { targetUrl, snapshotUrl, snapshotMobileUrl, widgetUrl } = opts;
 
 	// Preview mode: snapshot background + widget + disclosure banner
 	if (snapshotUrl && widgetUrl) {
@@ -915,6 +928,14 @@ export function generateDemoInteractivePage(
     }
     @media (max-height: 1080px) {
       body { background-size: auto 100vh; }
+    }
+    @media (max-width: 768px) {
+      html, body { overflow: auto; }
+      body {
+        ${snapshotMobileUrl ? `background-image: url('${esc(snapshotMobileUrl)}');` : ""}
+        background-size: 100% auto;
+        background-position: top center;
+      }
     }
     .preview-banner {
       position: fixed;

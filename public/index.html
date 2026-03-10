@@ -78,7 +78,35 @@
       outline: none;
     }
 
-    input:focus { border-color: #6366f1; }
+    input:focus, textarea:focus { border-color: #6366f1; }
+
+    textarea {
+      width: 100%;
+      padding: 10px 12px;
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-size: 13px;
+      font-family: inherit;
+      line-height: 1.5;
+      resize: vertical;
+      outline: none;
+    }
+
+    select {
+      width: 100%;
+      padding: 8px 10px;
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-size: 13px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    select:focus { border-color: #6366f1; }
 
     .field { margin-bottom: 14px; }
 
@@ -886,13 +914,6 @@
   <div class="panel panel-left">
     <div class="panel-body">
       <div class="field">
-        <label for="tenant-select">Tenant</label>
-        <select id="tenant-select" onchange="onTenantSelect(this.value)" style="width:100%;padding:6px 8px;background:#222;border:1px solid #444;border-radius:4px;color:#e0e0e0;font-size:13px;outline:none">
-          <option value="">-- Select tenant --</option>
-        </select>
-      </div>
-
-      <div class="field">
         <label for="rec-tenant-id">Tenant ID</label>
         <div style="display:flex;gap:4px;align-items:center">
           <input type="text" id="rec-tenant-id" placeholder="e.g. 42" inputmode="numeric" disabled style="flex:1">
@@ -911,35 +932,11 @@
         <input type="url" id="rec-widget-url" placeholder="https://example.com/widget.js">
       </div>
 
+      <div style="margin-bottom:4px">
+        <button class="btn-secondary" style="width:100%" id="btn-business" onclick="showBusinessEditor()">Business Insights</button>
+      </div>
       <div style="margin-bottom:8px">
         <button class="btn-secondary" style="width:100%" id="btn-simulate" onclick="launchSimulation()">Widget Chat Simulation</button>
-      </div>
-
-      <div class="field">
-        <label>Queries</label>
-        <div class="query-list" id="query-list">
-          <div class="query-row" draggable="true">
-            <span class="drag-handle">&#9776;</span>
-            <input type="text" value="Show me snowboards under $700">
-            <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>
-          </div>
-          <div class="query-row" draggable="true">
-            <span class="drag-handle">&#9776;</span>
-            <input type="text" value="Tell me about the Hydrogen">
-            <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>
-          </div>
-          <div class="query-row" draggable="true">
-            <span class="drag-handle">&#9776;</span>
-            <input type="text" value="Add it to my cart">
-            <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>
-          </div>
-          <div class="query-row" draggable="true">
-            <span class="drag-handle">&#9776;</span>
-            <input type="text" value="Let's check out">
-            <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>
-          </div>
-        </div>
-        <button class="btn-add" onclick="addQuery()">+ Add query</button>
       </div>
 
       <label class="toggle-field" for="rec-headed" id="headed-toggle" style="display:none">
@@ -1008,15 +1005,26 @@
   // --- Auth ---
   let currentUser = null;
 
+  // Intercept fetch to detect 401s and show login
+  const _origFetch = window.fetch;
+  window.fetch = async function(...args) {
+    const res = await _origFetch.apply(this, args);
+    if (res.status === 401) {
+      const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+      if (url.startsWith('/api/')) {
+        showLogin('Session expired. Please sign in again.');
+      }
+    }
+    return res;
+  };
+
   async function checkAuth() {
     // Check for error param from callback redirect
     const params = new URLSearchParams(window.location.search);
     const error = params.get('error');
-    if (error === 'invalid_or_expired_token') {
-      // Show login with error, clean URL
-      window.history.replaceState({}, '', '/');
-      showLogin('Link is invalid or expired. Please try again.');
-      return;
+    if (error) {
+      // Clean URL params regardless
+      window.history.replaceState({}, '', params.get('id') ? `/?id=${params.get('id')}` : '/');
     }
 
     try {
@@ -1027,7 +1035,7 @@
         hideLogin();
         initApp();
       } else {
-        showLogin();
+        showLogin(error === 'invalid_or_expired_token' ? 'Link is invalid or expired. Please try again.' : undefined);
       }
     } catch {
       showLogin();
@@ -1183,7 +1191,7 @@
     loadTenantList();
     const tenantVal = document.getElementById('rec-tenant-id').value.trim();
     if (tenantVal && /^\d+$/.test(tenantVal)) {
-      loadTenantInfo(false);
+      loadTenantInfo();
     }
 
     // Force headless on remote servers (no display available)
@@ -1195,12 +1203,10 @@
     document.getElementById('rec-url').addEventListener('input', saveFormState);
     document.getElementById('rec-widget-url').addEventListener('input', saveFormState);
     document.getElementById('rec-headed').addEventListener('change', saveFormState);
-    document.getElementById('query-list').addEventListener('input', saveFormState);
 
     // Save config to backend on blur (when a recording is selected)
     document.getElementById('rec-url').addEventListener('blur', saveConfigToBackend);
     document.getElementById('rec-widget-url').addEventListener('blur', saveConfigToBackend);
-    document.getElementById('query-list').addEventListener('blur', saveConfigToBackend, true);
 
     loadRecordings().then(() => {
       const lastId = getLastSelected();
@@ -1249,14 +1255,22 @@
   }
 
   function saveFormState() {
+    syncQueriesFromDOM();
+    syncIntroOutroFromDOM();
+    syncBusinessFromDOM();
+
     const state = loadState();
     const tenantId = document.getElementById('rec-tenant-id').value.trim();
     const formData = {
       url: document.getElementById('rec-url').value,
       widgetUrl: document.getElementById('rec-widget-url').value,
       tenantId,
-      queries: getQueries(),
+      queries: queriesState,
       headed: document.getElementById('rec-headed').checked,
+      introText: introTextValue,
+      outroText: outroTextValue,
+      tagline: taglineValue,
+      inventoryDescription: inventoryDescriptionValue,
     };
     state.form = formData;
 
@@ -1267,6 +1281,12 @@
         url: formData.url,
         widgetUrl: formData.widgetUrl,
         queries: formData.queries,
+        introText: formData.introText,
+        outroText: formData.outroText,
+        tagline: formData.tagline,
+        inventoryDescription: formData.inventoryDescription,
+        taglineOriginal: taglineOriginal,
+        inventoryDescriptionOriginal: inventoryDescriptionOriginal,
       };
     }
 
@@ -1286,60 +1306,12 @@
       const res = await fetch('/api/tenants');
       if (!res.ok) return;
       tenantList = await res.json();
-      renderTenantDropdown();
     } catch (err) {
       console.warn('[Tenants] Failed to load:', err);
     }
   }
 
-  function renderTenantDropdown() {
-    const select = document.getElementById('tenant-select');
-    const currentVal = document.getElementById('rec-tenant-id').value.trim();
-
-    // Collect all known tenant IDs from server list
-    const knownIds = new Set(tenantList.map(t => String(t.tenantId)));
-
-    // Build options from server list
-    let html = '<option value="">-- Select tenant --</option>';
-    for (const t of tenantList) {
-      const label = buildTenantLabel(t);
-      const selected = currentVal === String(t.tenantId) ? ' selected' : '';
-      html += `<option value="${t.tenantId}"${selected}>${label}</option>`;
-    }
-
-    // Add locally-saved tenants that aren't on the server yet (drafted but no recordings)
-    const state = loadState();
-    if (state.tenantForms) {
-      for (const tid of Object.keys(state.tenantForms)) {
-        if (!knownIds.has(tid)) {
-          const selected = currentVal === tid ? ' selected' : '';
-          html += `<option value="${tid}"${selected}>${tid} (draft)</option>`;
-          knownIds.add(tid);
-        }
-      }
-    }
-
-    // If current tenant ID still isn't in any list, add it
-    if (currentVal && !knownIds.has(currentVal)) {
-      html += `<option value="${currentVal}" selected>${currentVal}</option>`;
-    }
-
-    select.innerHTML = html;
-  }
-
-  function buildTenantLabel(t) {
-    const snap = t.tenantSnapshot;
-    const name = snap?.setup?.businessName || snap?.app?.title || '';
-    let label = String(t.tenantId);
-    if (name) label += ' - ' + name;
-    if (t.versions && t.versions.length > 0) {
-      const latest = Math.max(...t.versions.map(v => v.version));
-      label += ` (v${latest})`;
-    }
-    return label;
-  }
-
-  function onTenantSelect(val) {
+  async function onTenantSelect(val) {
     if (!val) return;
     const input = document.getElementById('rec-tenant-id');
     const currentVal = input.value.trim();
@@ -1353,72 +1325,189 @@
     document.getElementById('btn-tenant-edit').style.display = 'flex';
     document.getElementById('btn-tenant-confirm').style.display = 'none';
 
-    // Restore form: local saved state first, then published config, then tenant info
+    // Clear fields — URL and widget URL always come from server
+    document.getElementById('rec-url').value = '';
+    document.getElementById('rec-widget-url').value = '';
+
+    // Restore only queries from local form or published config
     const localForm = loadTenantFormState(val);
     const tenant = tenantList.find(t => String(t.tenantId) === val);
     const cfg = localForm || tenant?.config;
 
-    if (cfg) {
-      if (cfg.url) document.getElementById('rec-url').value = cfg.url;
-      document.getElementById('rec-widget-url').value = cfg.widgetUrl || '';
-      if (cfg.queries && cfg.queries.length > 0) {
-        const list = document.getElementById('query-list');
-        list.innerHTML = '';
-        for (const q of cfg.queries) {
-          const row = document.createElement('div');
-          row.className = 'query-row';
-          row.draggable = true;
-          row.innerHTML = `<span class="drag-handle">&#9776;</span><input type="text" value="${q.replace(/"/g, '&quot;')}">
-            <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>`;
-          list.appendChild(row);
-        }
-      }
+    if (cfg?.queries && cfg.queries.length > 0) {
+      queriesState = cfg.queries;
     }
 
-    saveFormState();
+    // Restore per-tenant state, or clear for fresh auto-populate from API
+    introTextValue = cfg?.introText || '';
+    outroTextValue = cfg?.outroText || '';
+    taglineValue = cfg?.tagline || '';
+    inventoryDescriptionValue = cfg?.inventoryDescription || '';
+    taglineOriginal = cfg?.taglineOriginal || '';
+    inventoryDescriptionOriginal = cfg?.inventoryDescriptionOriginal || '';
+
+    // Sync DOM fields if the business editor is open, so syncBusinessFromDOM()
+    // inside saveFormState() won't read stale values from the previous tenant
+    const introEl = document.getElementById('rec-intro-text');
+    const outroEl = document.getElementById('rec-outro-text');
+    const tagEl = document.getElementById('biz-tagline');
+    const descEl = document.getElementById('biz-description');
+    if (introEl) introEl.value = introTextValue;
+    if (outroEl) outroEl.value = outroTextValue;
+    if (tagEl) tagEl.value = taglineValue;
+    if (descEl) descEl.value = inventoryDescriptionValue;
+
     syncTenantIdToUrl();
-    // Only fetch remote tenant info if we didn't have local state
-    if (!localForm) loadTenantInfo();
+    // Fetch tenant info to populate URL and widget URL, then save
+    // (also compares originals and resets if upstream changed)
+    await loadTenantInfo();
+    saveFormState();
     loadRecordings();
   }
 
-  function toggleTenantEdit() {
+  async function toggleTenantEdit() {
+    const container = document.getElementById('rec-tenant-id').parentElement;
     const input = document.getElementById('rec-tenant-id');
     const editBtn = document.getElementById('btn-tenant-edit');
     const confirmBtn = document.getElementById('btn-tenant-confirm');
-    input.disabled = false;
-    input.focus();
+
+    // Build a <select> dropdown with demo tenants
+    const select = document.createElement('select');
+    select.id = 'tenant-picker';
+    select.style.flex = '1';
+
+    const currentVal = input.value.trim();
+
+    // Show loading state
+    select.innerHTML = '<option value="">Loading...</option>';
+    input.style.display = 'none';
+    container.insertBefore(select, editBtn);
     editBtn.style.display = 'none';
-    confirmBtn.style.display = 'flex';
+    confirmBtn.style.display = 'none';
+
+    // Fetch demo tenants
+    let tenants = [];
+    try {
+      const res = await fetch('/api/demo-tenants');
+      if (res.ok) {
+        const data = await res.json();
+        tenants = data.tenants || [];
+      }
+    } catch (err) {
+      console.warn('[DemoTenants] Failed to load:', err);
+    }
+
+    // Populate options
+    let html = '<option value="">-- Select tenant --</option>';
+    for (const t of tenants) {
+      const selected = currentVal === String(t.id) ? ' selected' : '';
+      html += `<option value="${t.id}"${selected}>${t.id} - ${t.subdomain}</option>`;
+    }
+    html += '<option value="__manual__">Enter ID manually...</option>';
+
+    // If current value isn't in the list, add it at the top
+    if (currentVal && !tenants.some(t => String(t.id) === currentVal)) {
+      html = `<option value="">-- Select tenant --</option><option value="${currentVal}" selected>${currentVal} (current)</option>` +
+        html.replace('<option value="">-- Select tenant --</option>', '');
+    }
+
+    select.innerHTML = html;
+    select.focus();
+
+    // Handle selection
+    select.addEventListener('change', () => {
+      const val = select.value;
+      select.remove();
+      input.style.display = '';
+      editBtn.style.display = 'flex';
+
+      if (val === '__manual__') {
+        // Switch to manual text input mode
+        input.disabled = false;
+        input.focus();
+        editBtn.style.display = 'none';
+        confirmBtn.style.display = 'flex';
+        return;
+      }
+
+      if (val && val !== currentVal) {
+        onTenantSelect(val);
+      }
+    });
+
+    // Cancel on blur (click away)
+    select.addEventListener('blur', () => {
+      // Small delay so change event fires first if an option was clicked
+      setTimeout(() => {
+        if (document.getElementById('tenant-picker')) {
+          select.remove();
+          input.style.display = '';
+          editBtn.style.display = 'flex';
+        }
+      }, 150);
+    });
   }
 
-  function confirmTenantEdit() {
+  async function confirmTenantEdit() {
     const input = document.getElementById('rec-tenant-id');
     const editBtn = document.getElementById('btn-tenant-edit');
     const confirmBtn = document.getElementById('btn-tenant-confirm');
+
+    const val = input.value.trim();
+    if (!val || isNaN(Number(val))) return;
+
+    // Fetch tenant info — also serves as existence check
+    let info;
+    try {
+      const res = await fetch(`/api/tenant/${val}`);
+      if (!res.ok) {
+        input.focus();
+        return;
+      }
+      info = await res.json();
+      cachedTenantInfo = info;
+    } catch {
+      input.focus();
+      return;
+    }
+
     input.disabled = true;
     editBtn.style.display = 'flex';
     confirmBtn.style.display = 'none';
 
-    // Sync dropdown selection
-    const select = document.getElementById('tenant-select');
-    const val = input.value.trim();
-    if (select.querySelector(`option[value="${val}"]`)) {
-      select.value = val;
-    } else if (val) {
-      // Add as manual entry and select it
-      const opt = document.createElement('option');
-      opt.value = val;
-      opt.textContent = val;
-      select.appendChild(opt);
-      select.value = val;
-    } else {
-      select.value = '';
+    // Populate fields from tenant info
+    const website = info.setup?.website || info.app?.homePageUrl;
+    if (website) document.getElementById('rec-url').value = website;
+    if (info.subdomain) {
+      document.getElementById('rec-widget-url').value = `https://${info.subdomain}.xinfer.ai/widget.js`;
     }
+    suggestedActions = info.app?.suggestedActions || [];
+
+    // Restore from local per-tenant state, or initialize from API
+    const localForm = loadTenantFormState(val);
+    if (localForm?.introText) introTextValue = localForm.introText;
+    else populateIntroOutroDefaults(info, true);
+    if (localForm?.outroText) outroTextValue = localForm.outroText;
+    if (localForm?.tagline !== undefined) taglineValue = localForm.tagline;
+    else taglineValue = info.setup?.tagline || info.app?.greetTitle || '';
+    if (localForm?.inventoryDescription !== undefined) inventoryDescriptionValue = localForm.inventoryDescription;
+    else inventoryDescriptionValue = info.setup?.inventoryDescription || '';
+    taglineOriginal = localForm?.taglineOriginal || '';
+    inventoryDescriptionOriginal = localForm?.inventoryDescriptionOriginal || '';
+
+    // Update DOM fields if the editor panel is open, so syncBusinessFromDOM()
+    // inside saveFormState() reads the correct values
+    const tagEl = document.getElementById('biz-tagline');
+    const descEl = document.getElementById('biz-description');
+    const introEl = document.getElementById('rec-intro-text');
+    const outroEl = document.getElementById('rec-outro-text');
+    if (tagEl) tagEl.value = taglineValue;
+    if (descEl) descEl.value = inventoryDescriptionValue;
+    if (introEl) introEl.value = introTextValue;
+    if (outroEl) outroEl.value = outroTextValue;
 
     saveFormState();
     syncTenantIdToUrl();
-    loadTenantInfo();
     loadRecordings();
   }
 
@@ -1433,8 +1522,89 @@
     window.history.replaceState({}, '', url);
   }
 
+  // --- Queries state ---
+  let queriesState = ['Show me snowboards under $700', 'Tell me about the Hydrogen', 'Add it to my cart', "Let's check out"];
+
+  /** Sync queriesState from DOM if query-list exists. */
+  function syncQueriesFromDOM() {
+    const list = document.getElementById('query-list');
+    if (list) {
+      queriesState = Array.from(list.querySelectorAll('input'))
+        .map(i => i.value.trim())
+        .filter(v => v.length > 0);
+    }
+  }
+
+  /** Render query rows into #query-list from queriesState. */
+  function renderQueryList() {
+    const list = document.getElementById('query-list');
+    if (!list) return;
+    list.innerHTML = '';
+    for (const q of queriesState) {
+      const row = document.createElement('div');
+      row.className = 'query-row';
+      row.draggable = true;
+      row.innerHTML = `<span class="drag-handle">&#9776;</span><input type="text" value="${q.replace(/"/g, '&quot;')}">
+        <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>`;
+      list.appendChild(row);
+    }
+    initQueryDragDrop();
+  }
+
+  // --- Intro/outro text state ---
+  let introTextValue = '';
+  let outroTextValue = '';
+
+  /** Sync JS variable from DOM field if it exists. */
+  function syncIntroOutroFromDOM() {
+    const introEl = document.getElementById('rec-intro-text');
+    const outroEl = document.getElementById('rec-outro-text');
+    if (introEl) introTextValue = introEl.value;
+    if (outroEl) outroTextValue = outroEl.value;
+  }
+
+  // --- Business fields state ---
+  let taglineValue = '';
+  let inventoryDescriptionValue = '';
+  let taglineOriginal = '';
+  let inventoryDescriptionOriginal = '';
+
+  function syncBusinessFromDOM() {
+    const tagEl = document.getElementById('biz-tagline');
+    const descEl = document.getElementById('biz-description');
+    if (tagEl) taglineValue = tagEl.value;
+    if (descEl) inventoryDescriptionValue = descEl.value;
+  }
+
+  function defaultIntroText(info) {
+    const assistantName = info.setup?.assistantName || info.app?.title || 'our AI assistant';
+    const businessName = info.setup?.businessName || info.app?.title || 'your business';
+    return `Watch ${assistantName} guide customers through products, answer questions, and drive conversions on ${businessName}'s site.`;
+  }
+
+  function defaultOutroText(info) {
+    const assistantName = info.setup?.assistantName || info.app?.title || 'our AI assistant';
+    const businessName = info.setup?.businessName || info.app?.title || 'your business';
+    return `That's ${assistantName} in action on ${businessName}'s site — guiding customers, answering questions, and driving conversions. Ready to get started?`;
+  }
+
+  function populateIntroOutroDefaults(info, force = false) {
+    if (force || !introTextValue.trim()) {
+      introTextValue = defaultIntroText(info);
+    }
+    if (force || !outroTextValue.trim()) {
+      outroTextValue = defaultOutroText(info);
+    }
+    // Update DOM if fields are visible
+    const introEl = document.getElementById('rec-intro-text');
+    const outroEl = document.getElementById('rec-outro-text');
+    if (introEl) introEl.value = introTextValue;
+    if (outroEl) outroEl.value = outroTextValue;
+  }
+
   // --- Tenant info loading ---
   let suggestedActions = [];
+  let cachedTenantInfo = null;
 
   async function loadTenantInfo(populateFields = true) {
     const tenantId = document.getElementById('rec-tenant-id').value.trim();
@@ -1442,8 +1612,13 @@
 
     try {
       const res = await fetch(`/api/tenant/${tenantId}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        console.warn(`[Tenant] /api/tenant/${tenantId} returned ${res.status}`);
+        return;
+      }
       const info = await res.json();
+      cachedTenantInfo = info;
+      console.log(`[Tenant] Loaded info for ${tenantId}`);
 
       if (populateFields) {
         // Populate Target URL from website (only if empty)
@@ -1456,6 +1631,31 @@
         if (info.subdomain && !document.getElementById('rec-widget-url').value.trim()) {
           document.getElementById('rec-widget-url').value = `https://${info.subdomain}.xinfer.ai/widget.js`;
         }
+
+        // Auto-populate intro/outro (only if empty)
+        populateIntroOutroDefaults(info);
+
+        // Compare API values against stored originals to detect upstream changes
+        const apiTagline = info.setup?.tagline || info.app?.greetTitle || '';
+        const apiDescription = info.setup?.inventoryDescription || '';
+        const localForm = loadTenantFormState(tenantId);
+
+        if (!localForm || localForm.taglineOriginal !== apiTagline) {
+          taglineValue = apiTagline;
+        }
+        taglineOriginal = apiTagline;
+
+        if (!localForm || localForm.inventoryDescriptionOriginal !== apiDescription) {
+          inventoryDescriptionValue = apiDescription;
+        }
+        inventoryDescriptionOriginal = apiDescription;
+
+        // Update DOM fields if the editor panel is open, so syncBusinessFromDOM()
+        // inside saveFormState() reads the correct values
+        const tagEl = document.getElementById('biz-tagline');
+        const descEl = document.getElementById('biz-description');
+        if (tagEl) tagEl.value = taglineValue;
+        if (descEl) descEl.value = inventoryDescriptionValue;
 
         saveFormState();
       }
@@ -1482,21 +1682,25 @@
   function restoreFormState() {
     const state = loadState();
     if (!state.form) return;
-    const { url, widgetUrl, tenantId, queries, headed } = state.form;
+    const { url, widgetUrl, tenantId, queries, headed, introText, outroText, tagline, inventoryDescription } = state.form;
     if (url) document.getElementById('rec-url').value = url;
     document.getElementById('rec-widget-url').value = widgetUrl || '';
     if (tenantId) document.getElementById('rec-tenant-id').value = tenantId;
     if (headed) document.getElementById('rec-headed').checked = headed;
+    if (introText) introTextValue = introText;
+    if (outroText) outroTextValue = outroText;
+    if (tagline) taglineValue = tagline;
+    if (inventoryDescription) inventoryDescriptionValue = inventoryDescription;
     if (queries && queries.length > 0) {
-      const list = document.getElementById('query-list');
-      list.innerHTML = '';
-      for (const q of queries) {
-        const row = document.createElement('div');
-        row.className = 'query-row';
-        row.draggable = true;
-        row.innerHTML = `<span class="drag-handle">&#9776;</span><input type="text" value="${q.replace(/"/g, '&quot;')}">
-          <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>`;
-        list.appendChild(row);
+      queriesState = queries;
+    }
+
+    // Restore API originals for stale-detection
+    if (tenantId) {
+      const tf = state.tenantForms?.[tenantId];
+      if (tf) {
+        taglineOriginal = tf.taglineOriginal || '';
+        inventoryDescriptionOriginal = tf.inventoryDescriptionOriginal || '';
       }
     }
   }
@@ -1575,67 +1779,209 @@
   // --- Query drag and drop ---
   let dragRow = null;
 
-  document.getElementById('query-list').addEventListener('dragstart', (e) => {
-    const row = e.target.closest('.query-row');
-    if (!row) return;
-    dragRow = row;
-    row.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-  });
-
-  document.getElementById('query-list').addEventListener('dragend', (e) => {
-    if (dragRow) {
-      dragRow.classList.remove('dragging');
-      dragRow = null;
-    }
-    document.querySelectorAll('.query-row.drag-over').forEach(r => r.classList.remove('drag-over'));
-  });
-
-  document.getElementById('query-list').addEventListener('dragover', (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    const row = e.target.closest('.query-row');
-    if (!row || row === dragRow) return;
-    document.querySelectorAll('.query-row.drag-over').forEach(r => r.classList.remove('drag-over'));
-    row.classList.add('drag-over');
-  });
-
-  document.getElementById('query-list').addEventListener('dragleave', (e) => {
-    const row = e.target.closest('.query-row');
-    if (row) row.classList.remove('drag-over');
-  });
-
-  document.getElementById('query-list').addEventListener('drop', (e) => {
-    e.preventDefault();
-    const target = e.target.closest('.query-row');
-    if (!target || !dragRow || target === dragRow) return;
-    target.classList.remove('drag-over');
-
+  function initQueryDragDrop() {
     const list = document.getElementById('query-list');
-    const rows = Array.from(list.children);
-    const fromIdx = rows.indexOf(dragRow);
-    const toIdx = rows.indexOf(target);
+    if (!list) return;
 
-    if (fromIdx < toIdx) {
-      list.insertBefore(dragRow, target.nextSibling);
-    } else {
-      list.insertBefore(dragRow, target);
-    }
+    list.addEventListener('dragstart', (e) => {
+      const row = e.target.closest('.query-row');
+      if (!row) return;
+      dragRow = row;
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
 
-    saveFormState();
-    saveConfigToBackend();
-  });
+    list.addEventListener('dragend', (e) => {
+      if (dragRow) {
+        dragRow.classList.remove('dragging');
+        dragRow = null;
+      }
+      document.querySelectorAll('.query-row.drag-over').forEach(r => r.classList.remove('drag-over'));
+    });
+
+    list.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const row = e.target.closest('.query-row');
+      if (!row || row === dragRow) return;
+      document.querySelectorAll('.query-row.drag-over').forEach(r => r.classList.remove('drag-over'));
+      row.classList.add('drag-over');
+    });
+
+    list.addEventListener('dragleave', (e) => {
+      const row = e.target.closest('.query-row');
+      if (row) row.classList.remove('drag-over');
+    });
+
+    list.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const target = e.target.closest('.query-row');
+      if (!target || !dragRow || target === dragRow) return;
+      target.classList.remove('drag-over');
+
+      const rows = Array.from(list.children);
+      const fromIdx = rows.indexOf(dragRow);
+      const toIdx = rows.indexOf(target);
+
+      if (fromIdx < toIdx) {
+        list.insertBefore(dragRow, target.nextSibling);
+      } else {
+        list.insertBefore(dragRow, target);
+      }
+
+      saveFormState();
+      saveConfigToBackend();
+    });
+  }
 
   function getQueries() {
-    return Array.from(document.querySelectorAll('#query-list input'))
-      .map(i => i.value.trim())
-      .filter(v => v.length > 0);
+    syncQueriesFromDOM();
+    return queriesState;
+  }
+
+  // --- Business Editor ---
+  function getBusinessOverrides() {
+    syncIntroOutroFromDOM();
+    syncBusinessFromDOM();
+    const overrides = {};
+    if (taglineValue.trim()) overrides.tagline = taglineValue;
+    if (inventoryDescriptionValue.trim()) overrides.inventoryDescription = inventoryDescriptionValue;
+    return overrides;
+  }
+
+  function showBusinessEditor() {
+    const tenantId = document.getElementById('rec-tenant-id').value.trim();
+    if (!tenantId) {
+      alert('Select a tenant first.');
+      return;
+    }
+
+    // Deselect recording
+    selectedId = null;
+    cachedData = null;
+    loadRecordings();
+
+    // Sync current state before re-rendering
+    syncQueriesFromDOM();
+    syncIntroOutroFromDOM();
+    syncBusinessFromDOM();
+
+    const panel = document.getElementById('detail-panel');
+    panel.innerHTML = `
+      <div style="margin-bottom:12px">
+        <button class="btn-secondary" id="btn-generate-ai" onclick="generateWithAI()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:6px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/><circle cx="12" cy="12" r="3"/></svg>
+          Generate with AI
+        </button>
+      </div>
+      <div class="field">
+        <label for="rec-intro-text">Intro Text</label>
+        <textarea id="rec-intro-text" rows="3">${introTextValue.replace(/</g, '&lt;')}</textarea>
+      </div>
+      <div class="field">
+        <label>Queries</label>
+        <div class="query-list" id="query-list"></div>
+        <button class="btn-add" onclick="addQuery()">+ Add query</button>
+      </div>
+      <div class="field" style="margin-top:4px">
+        <label for="rec-outro-text">Outro Text</label>
+        <textarea id="rec-outro-text" rows="3">${outroTextValue.replace(/</g, '&lt;')}</textarea>
+      </div>
+      <hr style="border:0;border-top:1px solid #333;margin:16px 0">
+      <div style="margin-bottom:12px">
+        <span style="font-size:14px;font-weight:600;color:#ccc">We Understand Your Business</span>
+      </div>
+      <div class="field">
+        <label for="biz-tagline">Title</label>
+        <textarea id="biz-tagline" rows="3">${taglineValue.replace(/</g, '&lt;')}</textarea>
+      </div>
+      <div class="field">
+        <label for="biz-description">Description</label>
+        <textarea id="biz-description" rows="6">${inventoryDescriptionValue.replace(/</g, '&lt;')}</textarea>
+      </div>`;
+
+    renderQueryList();
+
+    // Save on query edits
+    document.getElementById('query-list').addEventListener('input', saveFormState);
+    document.getElementById('query-list').addEventListener('blur', saveConfigToBackend, true);
+
+    // Sync all fields back to JS variables on input
+    document.getElementById('rec-intro-text').addEventListener('input', function() {
+      introTextValue = this.value;
+      saveFormState();
+    });
+    document.getElementById('rec-outro-text').addEventListener('input', function() {
+      outroTextValue = this.value;
+      saveFormState();
+    });
+    document.getElementById('biz-tagline').addEventListener('input', function() {
+      taglineValue = this.value;
+      saveFormState();
+    });
+    document.getElementById('biz-description').addEventListener('input', function() {
+      inventoryDescriptionValue = this.value;
+      saveFormState();
+    });
+  }
+
+  async function generateWithAI() {
+    const tenantId = document.getElementById('rec-tenant-id').value.trim();
+    if (!tenantId) return;
+
+    const btn = document.getElementById('btn-generate-ai');
+    if (!btn || btn.disabled) return;
+
+    // Show loading state
+    btn.disabled = true;
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;margin-right:6px"></span> Generating...';
+
+    // Use refresh if fields already have content
+    const hasContent = introTextValue.trim() || outroTextValue.trim();
+    const qs = hasContent ? '?refresh=true' : '';
+
+    try {
+      const res = await fetch(`/api/tenant/${tenantId}/generate${qs}`, { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+
+      // Populate fields
+      introTextValue = data.intro || '';
+      outroTextValue = data.outro || '';
+      if (data.queries && data.queries.length > 0) {
+        queriesState = data.queries;
+      }
+
+      // Update DOM
+      const introEl = document.getElementById('rec-intro-text');
+      const outroEl = document.getElementById('rec-outro-text');
+      if (introEl) introEl.value = introTextValue;
+      if (outroEl) outroEl.value = outroTextValue;
+      renderQueryList();
+
+      saveFormState();
+    } catch (err) {
+      console.error('[Generate] Failed:', err);
+      alert('Generation failed: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalHTML;
+    }
   }
 
   // --- Widget Chat Simulation ---
   let simActive = false;
 
   async function launchSimulation() {
+    // Sync state from business panel before it gets replaced
+    syncQueriesFromDOM();
+    syncIntroOutroFromDOM();
+
     const url = document.getElementById('rec-url').value.trim();
     if (!url) return alert('Target URL is required');
 
@@ -1729,6 +2075,9 @@
     if (!url || queries.length === 0) return;
 
     const btn = document.getElementById('btn-record');
+    activeBtnId = 'btn-record';
+    activeBtnLabel = 'Start New Recording';
+    activeAbort = new AbortController();
     btn.textContent = 'Recording...';
     setActionBusy(true);
 
@@ -1745,11 +2094,13 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: activeAbort.signal,
       });
       const { id } = await res.json();
 
       // Connect to SSE
       const source = new EventSource(`/api/recordings/${id}/events`);
+      activeSource = source;
       source.onmessage = (e) => {
         const event = JSON.parse(e.data);
         const line = document.createElement('div');
@@ -1760,6 +2111,7 @@
 
         if (event.type === 'done' || event.type === 'error') {
           source.close();
+          activeSource = null;
           btn.textContent = 'Start New Recording';
           setActionBusy(false);
           loadRecordings();
@@ -1767,6 +2119,7 @@
         }
       };
     } catch (err) {
+      if (err.name === 'AbortError') return; // handled by cancelAction
       const line = document.createElement('div');
       line.className = 'log-line error';
       line.textContent = 'Failed to start recording: ' + err.message;
@@ -1864,6 +2217,10 @@
   let cachedData = null; // cached recording data to avoid re-fetching on tab switch
 
   async function selectRecording(id, switchToVideo) {
+    // Sync state from business panel before it gets replaced
+    syncQueriesFromDOM();
+    syncIntroOutroFromDOM();
+
     // Close any active simulation
     if (simActive) {
       simActive = false;
@@ -1892,18 +2249,23 @@
       // Restore form fields from recording config
       if (cachedData.config) {
         const c = cachedData.config;
-        if (c.url) document.getElementById('rec-url').value = c.url;
-        document.getElementById('rec-widget-url').value = c.widgetUrl || '';
+        const urlEl = document.getElementById('rec-url');
+        if (urlEl && c.url) urlEl.value = c.url;
+        const widgetUrlEl = document.getElementById('rec-widget-url');
+        if (widgetUrlEl) widgetUrlEl.value = c.widgetUrl || '';
         if (c.queries && c.queries.length > 0) {
+          queriesState = c.queries;
           const list = document.getElementById('query-list');
-          list.innerHTML = '';
-          for (const q of c.queries) {
-            const row = document.createElement('div');
-            row.className = 'query-row';
-            row.draggable = true;
-            row.innerHTML = `<span class="drag-handle">&#9776;</span><input type="text" value="${q.replace(/"/g, '&quot;')}">
-              <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>`;
-            list.appendChild(row);
+          if (list) {
+            list.innerHTML = '';
+            for (const q of c.queries) {
+              const row = document.createElement('div');
+              row.className = 'query-row';
+              row.draggable = true;
+              row.innerHTML = `<span class="drag-handle">&#9776;</span><input type="text" value="${q.replace(/"/g, '&quot;')}">
+                <button class="btn-icon" onclick="removeQuery(this)" title="Remove">&times;</button>`;
+              list.appendChild(row);
+            }
           }
         }
         saveFormState();
@@ -2012,7 +2374,7 @@
 
       html += `</div>
         <div class="video-container">
-          <video id="video-player"
+          <video id="video-player" preload="auto"
             src="/api/recordings/${id}/video/${activeVideo}"></video>
         </div>
         <div class="video-controls">
@@ -2380,7 +2742,15 @@
   function togglePlay() {
     const video = document.getElementById('video-player');
     if (!video) return;
-    if (video.paused) { video.play(); } else { video.pause(); }
+    if (video.paused) {
+      video.play().catch(() => {
+        // First click may fail if video isn't ready — wait for data then retry
+        video.addEventListener('canplay', () => video.play(), { once: true });
+        video.load();
+      });
+    } else {
+      video.pause();
+    }
   }
 
   function seekVideo(val) {
@@ -2721,7 +3091,10 @@
       const res = await fetch(`/api/recordings/${selectedId}/preview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantId: Number(tenantId) }),
+        body: JSON.stringify({
+          tenantId: Number(tenantId),
+          ...getBusinessOverrides(),
+        }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -2765,7 +3138,10 @@
       const res = await fetch(`/api/recordings/${selectedId}/publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantId: Number(tenantId) }),
+        body: JSON.stringify({
+          tenantId: Number(tenantId),
+          ...getBusinessOverrides(),
+        }),
       });
       const data = await res.json();
 
@@ -2943,6 +3319,9 @@ Best,`;
 
     const btn = document.getElementById('btn-intro-make');
     const status = document.getElementById('intro-status');
+    activeBtnId = 'btn-intro-make';
+    activeBtnLabel = 'Make Intro & Outro';
+    activeAbort = new AbortController();
     setActionBusy(true);
     btn.textContent = 'Generating...';
     status.innerHTML = '<span style="color:#888">Creating intro scene...</span>';
@@ -2951,7 +3330,12 @@ Best,`;
       const res = await fetch(`/api/recordings/${selectedId}/intro`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantId: Number(tenantId) }),
+        body: JSON.stringify({
+          tenantId: Number(tenantId),
+          introText: introTextValue.trim() || undefined,
+          outroText: outroTextValue.trim() || undefined,
+        }),
+        signal: activeAbort.signal,
       });
 
       const reader = res.body.getReader();
@@ -2986,9 +3370,26 @@ Best,`;
           }
         }
       }
+      // Process any remaining data in buffer
+      if (buffer.trim().startsWith('data: ')) {
+        const evt = JSON.parse(buffer.trim().slice(6));
+        if (evt.type === 'done') {
+          status.innerHTML = '<span style="color:#22c55e">Intro & Outro ready!</span>';
+          btn.textContent = 'Make Intro & Outro';
+          setActionBusy(false);
+          loadRecordings();
+          await refreshRecording(selectedId, 'intro.webm');
+          checkVideoStates();
+          return;
+        }
+      }
+      // Fallthrough: stream ended without done/error event
+      btn.textContent = 'Make Intro & Outro';
+      setActionBusy(false);
     } catch (err) {
+      if (err.name === 'AbortError') return;
       status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
-      btn.textContent = 'Make Intro';
+      btn.textContent = 'Make Intro & Outro';
       setActionBusy(false);
     }
   }
@@ -2999,6 +3400,9 @@ Best,`;
 
     const btn = document.getElementById('btn-make-speed');
     const status = document.getElementById('speed-status');
+    activeBtnId = 'btn-make-speed';
+    activeBtnLabel = 'Make x2 Speed Video';
+    activeAbort = new AbortController();
     btn.textContent = 'Rendering...';
     setActionBusy(true);
     status.innerHTML = '<span style="color:#888">Creating x2 speed video...</span>';
@@ -3008,6 +3412,7 @@ Best,`;
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ video: 'raw.webm', speed: 2 }),
+        signal: activeAbort.signal,
       });
 
       const reader = res.body.getReader();
@@ -3041,7 +3446,23 @@ Best,`;
           }
         }
       }
+      // Process any remaining data in buffer
+      if (buffer.trim().startsWith('data: ')) {
+        const evt = JSON.parse(buffer.trim().slice(6));
+        if (evt.type === 'done') {
+          btn.textContent = 'Make x2 Speed Video';
+          setActionBusy(false);
+          loadRecordings();
+          await refreshRecording(selectedId, 'raw-speed-2x.webm');
+          checkVideoStates();
+          return;
+        }
+      }
+      // Fallthrough: stream ended without done/error event
+      btn.textContent = 'Make x2 Speed Video';
+      setActionBusy(false);
     } catch (err) {
+      if (err.name === 'AbortError') return;
       status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
       btn.textContent = 'Make x2 Speed Video';
       setActionBusy(false);
@@ -3054,6 +3475,9 @@ Best,`;
 
     const btn = document.getElementById('btn-compose');
     const status = document.getElementById('compose-status');
+    activeBtnId = 'btn-compose';
+    activeBtnLabel = 'Compose Final Video';
+    activeAbort = new AbortController();
     setActionBusy(true);
     btn.textContent = 'Composing...';
     status.innerHTML = '<span style="color:#888">Concatenating intro + video + outro...</span>';
@@ -3064,6 +3488,7 @@ Best,`;
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ video }),
+        signal: activeAbort.signal,
       });
 
       const reader = res.body.getReader();
@@ -3097,7 +3522,23 @@ Best,`;
           }
         }
       }
+      // Process any remaining data in buffer
+      if (buffer.trim().startsWith('data: ')) {
+        const evt = JSON.parse(buffer.trim().slice(6));
+        if (evt.type === 'done') {
+          btn.textContent = 'Compose Final Video';
+          setActionBusy(false);
+          loadRecordings();
+          await refreshRecording(selectedId, 'final.webm');
+          checkVideoStates();
+          return;
+        }
+      }
+      // Fallthrough: stream ended without done/error event
+      btn.textContent = 'Compose Final Video';
+      setActionBusy(false);
     } catch (err) {
+      if (err.name === 'AbortError') return;
       status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
       btn.textContent = 'Compose Final Video';
       setActionBusy(false);
@@ -3120,6 +3561,9 @@ Best,`;
 
     const btn = document.getElementById('btn-voiceover');
     const status = document.getElementById('voiceover-status');
+    activeBtnId = 'btn-voiceover';
+    activeBtnLabel = 'Add Voice to Video';
+    activeAbort = new AbortController();
     setActionBusy(true);
     btn.textContent = 'Generating...';
     status.innerHTML = '<span style="color:#888">Adding voiceover...</span>';
@@ -3129,6 +3573,7 @@ Best,`;
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tenantId: Number(tenantId), video }),
+        signal: activeAbort.signal,
       });
 
       const reader = res.body.getReader();
@@ -3163,7 +3608,24 @@ Best,`;
           }
         }
       }
+      // Process any remaining data in buffer
+      if (buffer.trim().startsWith('data: ')) {
+        const evt = JSON.parse(buffer.trim().slice(6));
+        if (evt.type === 'done') {
+          btn.textContent = 'Add Voice to Video';
+          setActionBusy(false);
+          const voicedFile = video.replace('.webm', '-voiced.webm');
+          loadRecordings();
+          await refreshRecording(selectedId, voicedFile);
+          checkVideoStates();
+          return;
+        }
+      }
+      // Fallthrough: stream ended without done/error event
+      btn.textContent = 'Add Voice to Video';
+      setActionBusy(false);
     } catch (err) {
+      if (err.name === 'AbortError') return;
       status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
       btn.textContent = 'Add Voice to Video';
       setActionBusy(false);
@@ -3269,10 +3731,52 @@ Best,`;
   }
 
   let actionBusy = false;
+  let activeAbort = null;      // AbortController for current operation
+  let activeSource = null;     // EventSource for recording
+  let activeBtnId = null;      // ID of button that started the operation
+  let activeBtnLabel = null;   // Original label to restore
 
   function setActionBusy(busy) {
     actionBusy = busy;
+    if (!busy) {
+      activeAbort = null;
+      activeSource = null;
+      activeBtnId = null;
+      activeBtnLabel = null;
+    }
     updateActionButtons();
+  }
+
+  function cancelAction() {
+    if (activeAbort) activeAbort.abort();
+    if (activeSource) { activeSource.close(); activeSource = null; }
+    const btn = activeBtnId ? document.getElementById(activeBtnId) : null;
+    if (btn && activeBtnLabel) {
+      btn.textContent = activeBtnLabel;
+    }
+    // Show cancelled status
+    const statusMap = {
+      'btn-record': 'progress-log',
+      'btn-make-speed': 'speed-status',
+      'btn-intro-make': 'intro-status',
+      'btn-voiceover': 'voiceover-status',
+      'btn-compose': 'compose-status',
+    };
+    const statusId = statusMap[activeBtnId];
+    if (statusId) {
+      const el = document.getElementById(statusId);
+      if (el) {
+        if (statusId === 'progress-log') {
+          const line = document.createElement('div');
+          line.className = 'log-line error';
+          line.textContent = 'Cancelled';
+          el.appendChild(line);
+        } else {
+          el.innerHTML = '<span style="color:#f59e0b">Cancelled</span>';
+        }
+      }
+    }
+    setActionBusy(false);
   }
 
   function updateActionButtons() {
@@ -3290,18 +3794,32 @@ Best,`;
     const trimBtn = document.getElementById('btn-edit-trim');
 
     if (actionBusy) {
-      // When any action is running, disable all buttons
-      if (recordBtn) recordBtn.disabled = true;
-      if (simulateBtn) simulateBtn.disabled = true;
-      if (speedBtn) speedBtn.disabled = true;
-      if (makeBtn) makeBtn.disabled = true;
-      if (voBtn) voBtn.disabled = true;
-      if (compBtn) compBtn.disabled = true;
-      if (previewBtn) previewBtn.disabled = true;
-      if (publishBtn) publishBtn.disabled = true;
-      if (wysiwygBtn) wysiwygBtn.disabled = true;
-      if (trimBtn) trimBtn.disabled = true;
+      // When any action is running, disable all buttons except the active one (Cancel)
+      const allBtns = [recordBtn, simulateBtn, speedBtn, makeBtn, voBtn, compBtn, previewBtn, publishBtn, wysiwygBtn, trimBtn];
+      for (const b of allBtns) {
+        if (!b) continue;
+        if (b.id === activeBtnId) {
+          b.disabled = false;
+          if (!b._origOnclick) b._origOnclick = b.getAttribute('onclick');
+          b.setAttribute('onclick', 'cancelAction()');
+          b.style.background = '#7f1d1d';
+          b.style.borderColor = '#991b1b';
+          b.title = 'Click to cancel';
+        } else {
+          b.disabled = true;
+        }
+      }
       return;
+    }
+
+    // Restore active button style and onclick when no longer busy
+    const allActionBtns = [recordBtn, speedBtn, makeBtn, voBtn, compBtn];
+    for (const b of allActionBtns) {
+      if (!b) continue;
+      b.style.background = '';
+      b.style.borderColor = '';
+      b.title = '';
+      if (b._origOnclick) { b.setAttribute('onclick', b._origOnclick); b._origOnclick = null; }
     }
 
     // Normal enable/disable logic

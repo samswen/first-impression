@@ -86,6 +86,7 @@ async function getAudioDuration(filePath: string): Promise<number> {
 export async function addVoiceover(
 	opts: VoiceoverOptions,
 	onProgress?: (message: string) => void,
+	signal?: AbortSignal,
 ): Promise<VoiceoverResult> {
 	const { recordingDir, videoFile, timeline, tenantInfo } = opts;
 	const videoPath = path.join(recordingDir, videoFile);
@@ -111,6 +112,7 @@ export async function addVoiceover(
 	onProgress?.(`Generating ${narrations.length} narration clips...`);
 
 	for (let i = 0; i < narrations.length; i++) {
+		if (signal?.aborted) throw new Error("Cancelled");
 		const { event, text } = narrations[i];
 		const clipPath = path.join(voDir, `clip-${i}.mp3`);
 
@@ -273,6 +275,7 @@ export async function addVoiceover(
 		outputPath,
 	);
 
+	if (signal?.aborted) throw new Error("Cancelled");
 	onProgress?.("Running ffmpeg...");
 
 	const { stderr } = await execP("ffmpeg", args, {

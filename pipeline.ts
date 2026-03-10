@@ -9,6 +9,7 @@ import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { chromium } from "playwright";
 import { generateDemoPage } from "./demo-page";
 import { detectFreezes } from "./freeze-detect";
 import type { SceneResult } from "./narrate";
@@ -21,6 +22,16 @@ import { publishDemo } from "./upload";
 import { addVoiceover } from "./voiceover";
 
 const execP = promisify(execFile);
+
+/** Apply user-edited business fields to tenant info before demo page generation. */
+function applyBusinessOverrides(
+	info: TenantInfo,
+	overrides: { tagline?: string; inventoryDescription?: string },
+): void {
+	if (overrides.tagline !== undefined) info.setup.tagline = overrides.tagline;
+	if (overrides.inventoryDescription !== undefined)
+		info.setup.inventoryDescription = overrides.inventoryDescription;
+}
 
 // ─── Utility functions ───────────────────────────────────────────────
 
@@ -394,6 +405,7 @@ export function startRecording(
 		tenantId?: number;
 	},
 	onProgress?: (event: ProgressEvent) => void,
+	signal?: AbortSignal,
 ): { id: string; dir: string; promise: Promise<void> } {
 	const id = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 	const dir = path.join(recordingsDir, id);
@@ -419,7 +431,7 @@ export function startRecording(
 		widgetUrl: opts.widgetUrl,
 	});
 
-	const promise = recorder.run(onProgress).then(() => {});
+	const promise = recorder.run(onProgress, signal).then(() => {});
 
 	return { id, dir, promise };
 }
@@ -515,6 +527,7 @@ export async function renderSpeedVideo(
 	videoFile: string,
 	speed: number,
 	onProgress?: (message: string) => void,
+	signal?: AbortSignal,
 ): Promise<SpeedResult> {
 	const videoPath = path.join(dir, videoFile);
 	if (!fs.existsSync(videoPath)) {
@@ -592,6 +605,15 @@ export async function renderSpeedVideo(
 
 	// Run ffmpeg with progress tracking
 	const proc = spawn("ffmpeg", args);
+	if (signal) {
+		if (signal.aborted) {
+			proc.kill("SIGTERM");
+			throw new Error("Cancelled");
+		}
+		signal.addEventListener("abort", () => proc.kill("SIGTERM"), {
+			once: true,
+		});
+	}
 	let lastPercent = 0;
 
 	proc.stdout.on("data", (data: Buffer) => {
@@ -650,6 +672,7 @@ export async function addVoiceoverToVideo(
 	videoFile: string,
 	tenantId: number,
 	onProgress?: (message: string) => void,
+	signal?: AbortSignal,
 ): Promise<{ clipCount: number; outputFile: string }> {
 	const videoPath = path.join(dir, videoFile);
 	if (!fs.existsSync(videoPath)) {
@@ -661,12 +684,15 @@ export async function addVoiceoverToVideo(
 		throw new Error("No timeline data for this video");
 	}
 
+	if (signal?.aborted) throw new Error("Cancelled");
 	const tenantInfo = await fetchTenantInfo(tenantId);
 	onProgress?.(`Adding voiceover to ${videoFile}...`);
 
+	if (signal?.aborted) throw new Error("Cancelled");
 	const result = await addVoiceover(
 		{ recordingDir: dir, videoFile, timeline, tenantInfo },
 		onProgress,
+		signal,
 	);
 
 	// Save timeline for the voiced video (same as source)
@@ -683,19 +709,24 @@ export async function addVoiceoverToVideo(
 export async function generateIntroOutro(
 	dir: string,
 	tenantId: number,
+	opts?: { introText?: string; outroText?: string },
 	onProgress?: (message: string) => void,
+	signal?: AbortSignal,
 ): Promise<IntroOutroResult> {
+	if (signal?.aborted) throw new Error("Cancelled");
 	const tenantInfo = await fetchTenantInfo(tenantId);
 	onProgress?.("Starting intro generation...");
 
+	if (signal?.aborted) throw new Error("Cancelled");
 	const intro = await generateIntro(
-		{ recordingDir: dir, tenantInfo },
+		{ recordingDir: dir, tenantInfo, narrativeText: opts?.introText },
 		onProgress,
 	);
 	onProgress?.(`Intro ready: ${intro.duration.toFixed(1)}s`);
 
+	if (signal?.aborted) throw new Error("Cancelled");
 	const outro = await generateOutro(
-		{ recordingDir: dir, tenantInfo },
+		{ recordingDir: dir, tenantInfo, narrativeText: opts?.outroText },
 		onProgress,
 	);
 
@@ -707,6 +738,7 @@ export async function composeVideo(
 	dir: string,
 	mainVideo?: string,
 	onProgress?: (message: string) => void,
+	signal?: AbortSignal,
 ): Promise<ComposeResult> {
 	const introPath = path.join(dir, "intro.webm");
 	const outroPath = path.join(dir, "outro.webm");
@@ -754,6 +786,7 @@ export async function composeVideo(
 	const concatListPath = path.join(dir, "final-concat.txt");
 	fs.writeFileSync(concatListPath, `${parts.join("\n")}\n`);
 
+	if (signal?.aborted) throw new Error("Cancelled");
 	onProgress?.("Concatenating videos...");
 
 	const { stderr } = await execP(
@@ -789,8 +822,10 @@ export async function generatePreview(
 	_dir: string,
 	tenantId: number,
 	videoUrl: string,
+	overrides?: { tagline?: string; inventoryDescription?: string },
 ): Promise<string> {
 	const tenantInfo = await fetchTenantInfo(tenantId);
+	if (overrides) applyBusinessOverrides(tenantInfo, overrides);
 	const tenantSlug = tenantSlugFromInfo(tenantInfo, tenantId);
 	const assetsBaseUrl = "https://assets.xinfer.ai";
 
@@ -802,11 +837,52 @@ export async function generatePreview(
 	});
 }
 
+/** Capture a mobile snapshot for an existing recording that only has a desktop snapshot. */
+export async function captureMobileSnapshot(
+	dir: string,
+	onProgress?: (message: string) => void,
+): Promise<string> {
+	const configPath = path.join(dir, "config.json");
+	if (!fs.existsSync(configPath)) {
+		throw new Error("No config.json found in recording directory");
+	}
+
+	const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+	const url = config.url as string;
+	if (!url) {
+		throw new Error("No URL found in config.json");
+	}
+
+	onProgress?.(`Capturing mobile snapshot of ${url}...`);
+
+	const browser = await chromium.launch({ headless: true });
+	const context = await browser.newContext({
+		viewport: { width: 390, height: 844 },
+		ignoreHTTPSErrors: true,
+	});
+	const page = await context.newPage();
+	await page.goto(url, { waitUntil: "load", timeout: 60_000 });
+	await page.waitForTimeout(3000);
+
+	const outputPath = path.join(dir, "snapshot-mobile.png");
+	await page.screenshot({ path: outputPath, fullPage: false });
+	await context.close();
+	await browser.close();
+
+	onProgress?.("Mobile snapshot saved");
+	return outputPath;
+}
+
 /** Publish a recording to S3. */
 export async function publishRecording(
 	dir: string,
 	tenantId: number,
-	opts?: { force?: boolean },
+	opts?: {
+		force?: boolean;
+		userId?: number;
+		tagline?: string;
+		inventoryDescription?: string;
+	},
 ): Promise<PublishResult> {
 	const bestVideo = pickBestVideo(dir);
 	const videoPath = path.join(dir, bestVideo);
@@ -816,7 +892,9 @@ export async function publishRecording(
 	}
 
 	const snapshotPath = path.join(dir, "snapshot.png");
+	const snapshotMobilePath = path.join(dir, "snapshot-mobile.png");
 	const tenantInfo = await fetchTenantInfo(tenantId);
+	if (opts) applyBusinessOverrides(tenantInfo, opts);
 	const tenantSlug = tenantSlugFromInfo(tenantInfo, tenantId);
 
 	// Read recording config for reproduction tracking
@@ -831,10 +909,14 @@ export async function publishRecording(
 		videoPath,
 		videoFile: bestVideo,
 		snapshotPath: fs.existsSync(snapshotPath) ? snapshotPath : undefined,
+		snapshotMobilePath: fs.existsSync(snapshotMobilePath)
+			? snapshotMobilePath
+			: undefined,
 		config,
 		targetUrl: config?.url as string | undefined,
 		widgetUrl: config?.widgetUrl as string | undefined,
 		force: opts?.force,
+		userId: opts?.userId,
 	});
 
 	return {

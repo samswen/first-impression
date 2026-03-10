@@ -163,7 +163,7 @@ async function run() {
 	// [3/6] Generate intro & outro
 	if (cfg.from <= 3) {
 		console.log("\n[3/6] Generate intro & outro");
-		await generateIntroOutro(dir, Number(cfg.tenant), log);
+		await generateIntroOutro(dir, Number(cfg.tenant), undefined, log);
 	}
 
 	// [4/6] Add voiceover

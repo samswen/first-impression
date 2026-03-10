@@ -55,7 +55,17 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, "public")));
+app.use(
+	express.static(path.join(__dirname, "public"), {
+		etag: false,
+		lastModified: false,
+		setHeaders(res, filePath) {
+			if (filePath.endsWith(".html")) {
+				res.set("Cache-Control", "no-store");
+			}
+		},
+	}),
+);
 
 const RAG_CHATBOT_BASE_URL = process.env.RAG_CHATBOT_BASE_URL || "";
 const FIRST_IMPRESSION_SECRET = process.env.FIRST_IMPRESSION_SECRET || "";
@@ -63,6 +73,9 @@ const FIRST_IMPRESSION_API_KEY = process.env.FIRST_IMPRESSION_API_KEY || "";
 
 // Store active SSE connections per recording ID
 const sseClients = new Map<string, express.Response[]>();
+
+// Store abort controllers for active recordings
+const recordingAborts = new Map<string, AbortController>();
 
 // SSE helpers
 function setupSSE(res: express.Response) {
@@ -100,8 +113,13 @@ function requireDir(
 
 // --- Auth Routes (public, no requireAuth) ---
 
-// Check auth status
+// Check auth status (no caching — must always reflect current cookie state)
 app.get("/auth/status", (req, res) => {
+	res.set({
+		"Cache-Control": "no-store, no-cache, must-revalidate",
+		Pragma: "no-cache",
+		ETag: "",
+	});
 	const token = req.cookies?.fi_session;
 	if (!token) {
 		return res.json({ authenticated: false });
@@ -213,7 +231,12 @@ app.post("/api/invite", async (req, res) => {
 					"Content-Type": "application/json",
 					Authorization: `Bearer ${FIRST_IMPRESSION_API_KEY}`,
 				},
-				body: JSON.stringify({ email, name, callbackBaseUrl }),
+				body: JSON.stringify({
+					email,
+					name,
+					callbackBaseUrl,
+					inviterName: req.user?.name,
+				}),
 			},
 		);
 
@@ -227,6 +250,24 @@ app.post("/api/invite", async (req, res) => {
 });
 
 // --- API Routes ---
+
+// List demo tenants (proxied from rag-chatbot)
+app.get("/api/demo-tenants", async (_req, res) => {
+	try {
+		const r = await fetch(
+			`${RAG_CHATBOT_BASE_URL}/api/first-impression/demo-tenants`,
+			{
+				headers: { Authorization: `Bearer ${FIRST_IMPRESSION_API_KEY}` },
+			},
+		);
+		const data = await r.json();
+		res.status(r.status).json(data);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		console.error("[DemoTenants] Error:", message);
+		res.status(502).json({ error: "Failed to fetch demo tenants" });
+	}
+});
 
 // List tenants the user has worked with (published + in-progress)
 app.get("/api/tenants", async (req, res) => {
@@ -368,6 +409,7 @@ app.post("/api/recordings", (req, res) => {
 	if (!fs.existsSync(uDir)) fs.mkdirSync(uDir, { recursive: true });
 	let recordingId = "";
 	const tid = tenantId ? Number(tenantId) : undefined;
+	const abortController = new AbortController();
 	const { id, promise } = startRecording(
 		uDir,
 		{ url, queries, headed, widgetUrl, tenantId: tid },
@@ -379,8 +421,10 @@ app.post("/api/recordings", (req, res) => {
 				client.write(`data: ${data}\n\n`);
 			}
 		},
+		abortController.signal,
 	);
 	recordingId = id;
+	recordingAborts.set(id, abortController);
 
 	promise
 		.then(() => {
@@ -397,6 +441,9 @@ app.post("/api/recordings", (req, res) => {
 			for (const client of clients) {
 				client.write(`data: ${data}\n\n`);
 			}
+		})
+		.finally(() => {
+			recordingAborts.delete(id);
 		});
 
 	res.json({ id });
@@ -419,6 +466,12 @@ app.get("/api/recordings/:id/events", (req, res) => {
 		const remaining = (sseClients.get(id) ?? []).filter((c) => c !== res);
 		if (remaining.length === 0) {
 			sseClients.delete(id);
+			// Abort the recording if all SSE clients disconnected
+			const abort = recordingAborts.get(id);
+			if (abort) {
+				console.log(`[Recording ${id}] All clients disconnected, aborting`);
+				abort.abort();
+			}
 		} else {
 			sseClients.set(id, remaining);
 		}
@@ -611,6 +664,10 @@ app.post("/api/recordings/:id/speed", async (req, res) => {
 	}
 
 	const send = setupSSE(res);
+	const ac = new AbortController();
+	res.on("close", () => {
+		if (!res.writableFinished) ac.abort();
+	});
 
 	try {
 		const result = await renderSpeedVideo(
@@ -618,13 +675,14 @@ app.post("/api/recordings/:id/speed", async (req, res) => {
 			video || "raw.webm",
 			speedNum,
 			(msg) => send("progress", msg),
+			ac.signal,
 		);
 		send("done", `Created ${result.outputFile}`);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		send("error", `Speed render failed: ${message}`);
+		if (!res.writableEnded) send("error", `Speed render failed: ${message}`);
 	}
-	res.end();
+	if (!res.writableEnded) res.end();
 });
 
 // Delete a video (not raw)
@@ -666,10 +724,36 @@ app.get("/api/tenant/:tenantId", async (req, res) => {
 
 	try {
 		const info = await fetchTenantInfo(tenantId);
+		console.log(`[Tenant] Loaded info for ${tenantId}`);
 		res.json(info);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		console.error(`[Tenant] Failed to fetch tenant ${tenantId}:`, message);
+		res.status(502).json({ error: message });
+	}
+});
+
+// Generate demo content (proxy to rag-chatbot LLM endpoint)
+app.post("/api/tenant/:tenantId/generate", async (req, res) => {
+	const tenantId = Number(req.params.tenantId);
+	if (Number.isNaN(tenantId)) {
+		return res.status(400).json({ error: "Invalid tenant ID" });
+	}
+	try {
+		const url = `${RAG_CHATBOT_BASE_URL}/api/first-impression/t/${tenantId}/generate`;
+		const refresh = req.query.refresh === "true" ? "?refresh=true" : "";
+		const response = await fetch(`${url}${refresh}`, {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${process.env.FIRST_IMPRESSION_API_KEY}`,
+				"Content-Type": "application/json",
+			},
+		});
+		const data = await response.json();
+		if (!response.ok) return res.status(response.status).json(data);
+		res.json(data);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
 		res.status(502).json({ error: message });
 	}
 });
@@ -685,6 +769,10 @@ app.post("/api/recordings/:id/voiceover", async (req, res) => {
 	}
 
 	const send = setupSSE(res);
+	const ac = new AbortController();
+	res.on("close", () => {
+		if (!res.writableFinished) ac.abort();
+	});
 
 	try {
 		const result = await addVoiceoverToVideo(
@@ -692,13 +780,14 @@ app.post("/api/recordings/:id/voiceover", async (req, res) => {
 			video || "raw.webm",
 			Number(tenantId),
 			(msg) => send("progress", msg),
+			ac.signal,
 		);
 		send("done", `Voiceover added: ${result.clipCount} clips`);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		send("error", `Voiceover failed: ${message}`);
+		if (!res.writableEnded) send("error", `Voiceover failed: ${message}`);
 	}
-	res.end();
+	if (!res.writableEnded) res.end();
 });
 
 // List voice clips
@@ -779,17 +868,24 @@ app.post("/api/recordings/:id/compose", async (req, res) => {
 	if (!dir) return;
 
 	const send = setupSSE(res);
+	const ac = new AbortController();
+	res.on("close", () => {
+		if (!res.writableFinished) ac.abort();
+	});
 
 	try {
-		const result = await composeVideo(dir, req.body.video, (msg) =>
-			send("progress", msg),
+		const result = await composeVideo(
+			dir,
+			req.body.video,
+			(msg) => send("progress", msg),
+			ac.signal,
 		);
 		send("done", `Final video: ${result.sizeMB.toFixed(1)}MB`);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		send("error", `Compose failed: ${message}`);
+		if (!res.writableEnded) send("error", `Compose failed: ${message}`);
 	}
-	res.end();
+	if (!res.writableEnded) res.end();
 });
 
 // Generate intro & outro (SSE)
@@ -797,16 +893,24 @@ app.post("/api/recordings/:id/intro", async (req, res) => {
 	const dir = requireDir(req, req.params.id, res);
 	if (!dir) return;
 
-	const { tenantId } = req.body;
+	const { tenantId, introText, outroText } = req.body;
 	if (!tenantId || Number.isNaN(Number(tenantId))) {
 		return res.status(400).json({ error: "tenantId required (number)" });
 	}
 
 	const send = setupSSE(res);
+	const ac = new AbortController();
+	res.on("close", () => {
+		if (!res.writableFinished) ac.abort();
+	});
 
 	try {
-		const result = await generateIntroOutro(dir, Number(tenantId), (msg) =>
-			send("progress", msg),
+		const result = await generateIntroOutro(
+			dir,
+			Number(tenantId),
+			{ introText, outroText },
+			(msg) => send("progress", msg),
+			ac.signal,
 		);
 		send(
 			"done",
@@ -814,9 +918,9 @@ app.post("/api/recordings/:id/intro", async (req, res) => {
 		);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		send("error", `Failed: ${message}`);
+		if (!res.writableEnded) send("error", `Failed: ${message}`);
 	}
-	res.end();
+	if (!res.writableEnded) res.end();
 });
 
 // Preview demo page
@@ -824,7 +928,7 @@ app.post("/api/recordings/:id/preview", async (req, res) => {
 	const dir = requireDir(req, req.params.id, res);
 	if (!dir) return;
 
-	const { tenantId } = req.body;
+	const { tenantId, tagline, inventoryDescription } = req.body;
 	if (!tenantId || Number.isNaN(Number(tenantId))) {
 		return res.status(400).json({ error: "tenantId required (number)" });
 	}
@@ -834,7 +938,10 @@ app.post("/api/recordings/:id/preview", async (req, res) => {
 		const protocol = req.protocol;
 		const host = req.get("host") || `localhost:${PORT}`;
 		const videoUrl = `${protocol}://${host}/api/recordings/${req.params.id}/video/${bestVideo}`;
-		const html = await generatePreview(dir, Number(tenantId), videoUrl);
+		const html = await generatePreview(dir, Number(tenantId), videoUrl, {
+			tagline,
+			inventoryDescription,
+		});
 		res.setHeader("Content-Type", "text/html; charset=utf-8");
 		res.send(html);
 	} catch (err) {
@@ -849,14 +956,47 @@ app.post("/api/recordings/:id/publish", async (req, res) => {
 	const dir = requireDir(req, req.params.id, res);
 	if (!dir) return;
 
-	const { tenantId } = req.body;
+	const { tenantId, tagline, inventoryDescription } = req.body;
 	if (!tenantId || Number.isNaN(Number(tenantId))) {
 		return res.status(400).json({ error: "tenantId required (number)" });
 	}
 
 	try {
-		const result = await publishRecording(dir, Number(tenantId));
+		const result = await publishRecording(dir, Number(tenantId), {
+			userId: req.user?.userId,
+			tagline,
+			inventoryDescription,
+		});
 		res.json(result);
+
+		// Fire-and-forget: send outreach templates to user's email
+		if (req.user?.email && RAG_CHATBOT_BASE_URL && FIRST_IMPRESSION_API_KEY) {
+			fetch(`${RAG_CHATBOT_BASE_URL}/api/first-impression/outreach-email`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${FIRST_IMPRESSION_API_KEY}`,
+				},
+				body: JSON.stringify({
+					to: req.user.email,
+					businessName: result.businessName,
+					assistantName: result.assistantName,
+					demoUrl: result.url,
+				}),
+			})
+				.then((r) => {
+					if (r.ok)
+						console.log(`[Publish] Outreach email sent to ${req.user!.email}`);
+					else
+						r.text().then((t) =>
+							console.error(
+								`[Publish] Outreach email failed (${r.status}):`,
+								t,
+							),
+						);
+				})
+				.catch((err) => console.error("[Publish] Outreach email error:", err));
+		}
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		console.error(`[Publish] Failed:`, message);

@@ -7,6 +7,7 @@ import {
 	resetZoom,
 	sendMessage,
 	TYPING_DELAY,
+	waitForResponseDone,
 	zoomToElement,
 } from "./helpers";
 
@@ -55,6 +56,7 @@ export class Recorder {
 
 	async run(
 		onProgress?: (event: ProgressEvent) => void,
+		signal?: AbortSignal,
 	): Promise<RecordingResult> {
 		const emit = (
 			type: ProgressEvent["type"],
@@ -81,33 +83,75 @@ export class Recorder {
 
 			// Use a separate browser for the snapshot (no recording)
 			const snapBrowser = await chromium.launch({ headless: true });
-			const snapContext = await snapBrowser.newContext({
-				viewport: { width: 1920, height: 1080 },
-				ignoreHTTPSErrors: true,
-			});
-			const snapPage = await snapContext.newPage();
-			await snapPage.goto(this.config.url, {
-				waitUntil: "load",
-				timeout: 60_000,
-			});
-			await snapPage.waitForTimeout(3000);
+			let snapshotOk = false;
 
-			const snapshotPath = path.join(dir, "snapshot.png");
-			await snapPage.screenshot({
-				path: snapshotPath,
-				fullPage: false,
-			});
-			await snapContext.close();
+			try {
+				const snapContext = await snapBrowser.newContext({
+					viewport: { width: 1920, height: 1080 },
+					ignoreHTTPSErrors: true,
+				});
+				const snapPage = await snapContext.newPage();
+				await snapPage.goto(this.config.url, {
+					waitUntil: "load",
+					timeout: 60_000,
+				});
+				await snapPage.waitForTimeout(3000);
+
+				const snapshotPath = path.join(dir, "snapshot.png");
+				await snapPage.screenshot({
+					path: snapshotPath,
+					fullPage: false,
+				});
+				await snapContext.close();
+
+				// Capture mobile snapshot at iPhone 14/15 size
+				const mobileContext = await snapBrowser.newContext({
+					viewport: { width: 390, height: 844 },
+					ignoreHTTPSErrors: true,
+				});
+				const mobilePage = await mobileContext.newPage();
+				await mobilePage.goto(this.config.url, {
+					waitUntil: "load",
+					timeout: 60_000,
+				});
+				await mobilePage.waitForTimeout(3000);
+
+				const snapshotMobilePath = path.join(dir, "snapshot-mobile.png");
+				await mobilePage.screenshot({
+					path: snapshotMobilePath,
+					fullPage: false,
+				});
+				await mobileContext.close();
+				snapshotOk = true;
+			} catch (snapErr) {
+				const msg =
+					snapErr instanceof Error ? snapErr.message : String(snapErr);
+				emit(
+					"progress",
+					`Could not reach ${this.config.url} (${msg}), using blank background...`,
+				);
+			}
+
 			await snapBrowser.close();
 
-			emit("progress", "Snapshot taken, building local page...");
+			if (snapshotOk) {
+				emit("progress", "Snapshot taken, building local page...");
+			}
 
-			// Read the screenshot as a data URI so the local HTML is self-contained
-			const imgBuffer = fs.readFileSync(snapshotPath);
-			const imgBase64 = imgBuffer.toString("base64");
-			const dataUri = `data:image/png;base64,${imgBase64}`;
+			// Build background style: screenshot if available, plain gradient if not
+			let bgStyle: string;
+			const snapshotPath = path.join(dir, "snapshot.png");
+			if (snapshotOk && fs.existsSync(snapshotPath)) {
+				const imgBuffer = fs.readFileSync(snapshotPath);
+				const imgBase64 = imgBuffer.toString("base64");
+				const dataUri = `data:image/png;base64,${imgBase64}`;
+				bgStyle = `background: url("${dataUri}") no-repeat top left; background-size: 1920px 1080px;`;
+			} else {
+				bgStyle =
+					"background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);";
+			}
 
-			// Build a local HTML page with the snapshot as background + widget script
+			// Build a local HTML page with background + widget script
 			const localHtml = `<!DOCTYPE html>
 <html>
 <head>
@@ -116,10 +160,7 @@ export class Recorder {
 <style>
 * { margin: 0; padding: 0; }
 html, body { width: 1920px; height: 1080px; overflow: hidden; }
-body {
-  background: url("${dataUri}") no-repeat top left;
-  background-size: 1920px 1080px;
-}
+body { ${bgStyle} }
 </style>
 </head>
 <body>
@@ -135,6 +176,7 @@ body {
 		}
 
 		// --- Now launch the recording browser and navigate to the ready page ---
+		if (signal?.aborted) throw new Error("Cancelled");
 		emit("progress", "Launching recording browser...");
 		const browser = await chromium.launch({
 			headless: !this.config.headed,
@@ -209,6 +251,7 @@ body {
 
 			// --- Queries ---
 			for (let i = 0; i < this.config.queries.length; i++) {
+				if (signal?.aborted) throw new Error("Cancelled");
 				const query = this.config.queries[i];
 				const actionName = `query-${i + 1}`;
 				const queryStart = this.now();
@@ -223,20 +266,34 @@ body {
 					await page.waitForTimeout(PAUSE_AFTER_RESPONSE);
 				}
 
-				// Handle checkout form on the last query if it triggers one
-				if (i === this.config.queries.length - 1) {
+				// Handle contact form when query mentions checkout, follow-up, or contact request
+				const triggersForm =
+					/check\s*out/i.test(query) ||
+					/follow\s*up/i.test(query) ||
+					/talk to someone/i.test(query) ||
+					/reach out/i.test(query) ||
+					/contact/i.test(query) ||
+					/call me/i.test(query) ||
+					/get in touch/i.test(query) ||
+					/schedule|book|appointment/i.test(query) ||
+					/speak (to|with)/i.test(query);
+				if (triggersForm) {
 					const form = panel.locator(".xinfer-followup-form");
 					const hasForm = await form
-						.waitFor({ state: "visible", timeout: 5000 })
+						.waitFor({ state: "visible", timeout: 15_000 })
 						.then(() => true)
 						.catch(() => false);
 
 					if (hasForm) {
-						emit("progress", "Filling checkout form...");
+						emit("progress", "Filling contact form...");
 						await page.waitForTimeout(1500);
 
-						const nameInput = form.locator('input[name="name"]');
-						const emailInput = form.locator('input[name="email"]');
+						const nameInput = form.locator(
+							'input.xinfer-followup-input[name="name"]',
+						);
+						const emailInput = form.locator(
+							'input.xinfer-followup-input[name="email"]',
+						);
 
 						await nameInput.pressSequentially("Demo XInfer", {
 							delay: TYPING_DELAY,
@@ -249,17 +306,11 @@ body {
 
 						const submitBtn = form.locator(".xinfer-followup-submit");
 						await submitBtn.click();
-						emit("progress", "Form submitted, waiting for confirmation...");
+						emit("progress", "Form submitted, waiting for response...");
 
-						try {
-							await page
-								.locator("text=/Order (#|Number)/i")
-								.first()
-								.waitFor({ state: "visible", timeout: 60_000 });
-							emit("progress", "Order confirmation visible");
-						} catch {
-							emit("progress", "Order confirmation not matched, continuing...");
-						}
+						// Wait for Suggest button to reappear (30s — form confirmation is quick)
+						await waitForResponseDone(page, widget, 30_000);
+						emit("progress", "Response complete");
 
 						await page.waitForTimeout(PAUSE_AFTER_RESPONSE);
 					}

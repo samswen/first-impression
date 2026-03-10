@@ -21,7 +21,7 @@ const STREAMING_TIMEOUT = 90_000;
  * The suggest button can briefly flash visible during product skeleton loading,
  * so we require both conditions to be true and stable.
  */
-async function waitForResponseDone(
+export async function waitForResponseDone(
 	page: Page,
 	widget: Locator,
 	timeout = STREAMING_TIMEOUT,
