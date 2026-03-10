@@ -27,7 +27,10 @@ export interface PublishOptions {
 	widgetUrl?: string; // widget script URL (when not already on site)
 	force?: boolean; // skip duplicate detection, always publish new version
 	userId?: number; // first-impression user ID for publish attribution
+	email?: string; // user email for publish attribution (resolved server-side)
+	autoCreateUser?: boolean; // auto-create user if email not found (CLI only)
 	subtitle?: string; // AI-generated hero subtitle for demo page
+	generatedContent?: Record<string, unknown>; // AI-generated text fields to save in snapshot
 }
 
 export interface PublishResult {
@@ -52,6 +55,8 @@ interface PublishApiRequest {
 	tenantSnapshot?: Record<string, unknown>;
 	contentHash?: string;
 	userId?: number;
+	userEmail?: string;
+	autoCreateUser?: boolean;
 }
 
 interface PublishApiResponse {
@@ -132,6 +137,9 @@ export async function publishDemo(
 		widgetUrl,
 		force,
 		userId,
+		email,
+		autoCreateUser,
+		generatedContent,
 	} = opts;
 
 	// Read video and compute content hash for dedup (skip when forcing)
@@ -161,6 +169,12 @@ export async function publishDemo(
 		files.push({ name: "demo.html", contentType: "text/html; charset=utf-8" });
 	}
 
+	// Build tenant snapshot — include generated content for future improvements
+	const tenantSnapshot: Record<string, unknown> = {
+		...(tenantInfo as unknown as Record<string, unknown>),
+		...(generatedContent ? { generatedContent } : {}),
+	};
+
 	// Get presigned URLs + record the publish (API may return duplicate)
 	const { uploads, baseUrl, publishedId, version, duplicate } =
 		await callPublishApi(tenantInfo.tenantId, {
@@ -168,9 +182,11 @@ export async function publishDemo(
 			files,
 			videoFile,
 			config,
-			tenantSnapshot: tenantInfo as unknown as Record<string, unknown>,
+			tenantSnapshot,
 			contentHash,
 			userId,
+			userEmail: email,
+			autoCreateUser,
 		});
 
 	// If the API detected identical content, skip all uploads

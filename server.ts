@@ -957,7 +957,15 @@ app.post("/api/recordings/:id/publish", async (req, res) => {
 	const dir = requireDir(req, req.params.id, res);
 	if (!dir) return;
 
-	const { tenantId, tagline, inventoryDescription, subtitle } = req.body;
+	const {
+		tenantId,
+		tagline,
+		inventoryDescription,
+		subtitle,
+		introText,
+		outroText,
+		queries,
+	} = req.body;
 	if (!tenantId || Number.isNaN(Number(tenantId))) {
 		return res.status(400).json({ error: "tenantId required (number)" });
 	}
@@ -965,40 +973,13 @@ app.post("/api/recordings/:id/publish", async (req, res) => {
 	try {
 		const result = await publishRecording(dir, Number(tenantId), {
 			userId: req.user?.userId,
+			email: req.user?.email,
 			tagline,
 			inventoryDescription,
 			subtitle,
+			generatedContent: { subtitle, introText, outroText, queries },
 		});
 		res.json(result);
-
-		// Fire-and-forget: send outreach templates to user's email
-		if (req.user?.email && RAG_CHATBOT_BASE_URL && FIRST_IMPRESSION_API_KEY) {
-			fetch(`${RAG_CHATBOT_BASE_URL}/api/first-impression/outreach-email`, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${FIRST_IMPRESSION_API_KEY}`,
-				},
-				body: JSON.stringify({
-					to: req.user.email,
-					businessName: result.businessName,
-					assistantName: result.assistantName,
-					demoUrl: result.url,
-				}),
-			})
-				.then((r) => {
-					if (r.ok)
-						console.log(`[Publish] Outreach email sent to ${req.user!.email}`);
-					else
-						r.text().then((t) =>
-							console.error(
-								`[Publish] Outreach email failed (${r.status}):`,
-								t,
-							),
-						);
-				})
-				.catch((err) => console.error("[Publish] Outreach email error:", err));
-		}
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		console.error(`[Publish] Failed:`, message);

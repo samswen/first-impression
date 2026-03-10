@@ -104,32 +104,75 @@ Opens http://localhost:3456 with the recording studio.
 
 ### CLI Pipeline
 
-Runs the full 6-step pipeline from the command line.
+Fully autonomous pipeline — just provide a tenant ID and the CLI derives everything else (URL, widget, queries, subtitle, intro/outro) from tenant info and AI generation.
 
 ```bash
-# Full pipeline
-pnpm cli -- --tenant 536222 --url https://example.com --queries "Show me products" "What about returns?"
+# Full autonomous run (derives URL, queries, subtitle, intro/outro from tenant info + AI)
+tsx cli.ts 536222
 
-# Resume from a specific step
-pnpm cli -- --tenant 536222 --recording 2026-03-09T12-33-23 --from 6
+# With user attribution (defaults to demo@xinfer.ai if omitted)
+tsx cli.ts 536222 --email sam@xinfer.ai
+
+# Override URL or queries when needed
+tsx cli.ts 536222 --url https://example.com --queries "Show me products" "What about returns?"
+
+# Resume from a specific step (uses saved state.json)
+tsx cli.ts 536222 --recording 2026-03-09T12-33-23 --from 5
+
+# Stop before publishing
+tsx cli.ts 536222 --no-publish
 
 # JSON from stdin
-echo '{"tenant":536222,"url":"https://example.com","queries":["Show me products"]}' | pnpm cli
+echo '{"tenant":536222,"email":"sam@xinfer.ai"}' | tsx cli.ts
 ```
 
-Steps: 1=record, 2=speed, 3=intro/outro, 4=voiceover, 5=compose, 6=publish
+Steps: 1=fetch & generate, 2=record, 3=speed, 4=intro/outro, 5=voiceover, 6=compose, 7=publish
 
 | Option | Description |
 |--------|-------------|
-| `--tenant <id>` | Tenant ID (required) |
-| `--url <url>` | Target website URL (required for new recordings) |
-| `--widget-url <url>` | Widget script URL (optional, uses live site widget if omitted) |
-| `--queries "q1" "q2"` | Queries to demo (required for new recordings, space-separated) |
+| `<tenantId>` | Tenant ID (first positional argument, required) |
+| `--email <email>` | User email for publish attribution (default: `demo@xinfer.ai`; auto-creates user if not found) |
+| `--url <url>` | Override target website URL (default: derived from tenant info) |
+| `--widget-url <url>` | Override widget script URL (default: derived from tenant subdomain) |
+| `--queries "q1" "q2"` | Override queries (default: AI-generated, then suggested actions) |
 | `--recording <id>` | Resume an existing recording (required with `--from`) |
-| `--from <step>` | Start from step 1–6 (default: 1) |
+| `--from <step>` | Start from step 1–7 (default: 1) |
 | `--speed <number>` | Speed multiplier (default: 2) |
 | `--headed` | Show browser during recording |
 | `--no-publish` | Stop after compose, skip publish |
+| `--force` | Skip duplicate detection, always publish new version |
+
+#### What step 1 does automatically
+
+The first step fetches tenant info and calls the AI generate API to produce all content needed for the pipeline:
+
+- **URL**: derived from `setup.website` or `app.homePageUrl`
+- **Widget URL**: derived from tenant subdomain (`https://{subdomain}.xinfer.ai/widget.js`)
+- **Queries**: AI-generated, falls back to `app.suggestedActions`
+- **Subtitle**: AI-generated, falls back to a default based on whether the tenant has products
+- **Intro/outro text**: AI-generated, falls back to defaults in the narration module
+
+All generated content is saved to `state.json` in the recording directory, enabling resume from any step without re-fetching.
+
+#### State file
+
+Each CLI run saves `state.json` in the recording directory after every step. This enables resuming with `--from` without losing generated content:
+
+```json
+{
+  "tenantId": 536222,
+  "completedStep": 3,
+  "url": "https://example.com",
+  "widgetUrl": "https://demo-agent.xinfer.ai/widget.js",
+  "subtitle": "A personalized demo of...",
+  "introText": "Meet our AI assistant...",
+  "outroText": "That's the assistant in action...",
+  "queries": ["Show me products", "What about returns?"],
+  "tagline": "Your AI shopping assistant",
+  "inventoryDescription": "Premium electronics and accessories",
+  "speed": 2
+}
+```
 
 ### CLI Recording
 
@@ -145,6 +188,8 @@ Each recording lives in `recordings/[ISO-timestamp]/` and accumulates files thro
 
 ```
 recordings/2026-03-08T12-23-36/
+├── config.json                 # Recording inputs (url, queries, tenantId)
+├── state.json                  # CLI pipeline state (generated content, progress)
 ├── raw.webm                    # Original Playwright recording
 ├── raw-speed-2x.webm           # 2x speed version
 ├── raw-speed-2x-voiced.webm    # With narration mixed in
@@ -194,7 +239,7 @@ demo-page.ts       Generates static HTML demo page per tenant
 upload.ts          S3 publisher (video + snapshot + HTML)
 public/index.html  Single-page web UI (recording studio)
 record.ts          CLI entry point (recording only)
-cli.ts             CLI entry point (full pipeline)
+cli.ts             CLI entry point (autonomous 7-step pipeline)
 ```
 
 ### API Endpoints
@@ -224,7 +269,7 @@ cli.ts             CLI entry point (full pipeline)
 | Script | Description |
 |--------|-------------|
 | `pnpm studio` | Start the web studio (auto-reloads on file changes) |
-| `pnpm cli` | Run the full pipeline from the command line (requires studio running) |
+| `pnpm cli` | Run the full autonomous pipeline from the command line |
 | `pnpm record` | Run a CLI recording |
 | `pnpm lint` | Run Biome linter and formatter |
 | `pnpm typecheck` | Run TypeScript type checking |

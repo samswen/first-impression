@@ -661,7 +661,7 @@ export function generateDemoPage(opts: DemoPageOptions): string {
     <div class="hero-content container">
       <div class="hero-badge">Personalized Demo</div>
       <h1>See how <em>${esc(businessName)}</em> can transform customer experience with AI</h1>
-      <p>${esc(subtitle || '')}</p>
+      <p>${esc(subtitle || "")}</p>
     </div>
   </section>
 

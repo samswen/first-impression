@@ -198,6 +198,25 @@ export function tenantSlugFromInfo(
 	);
 }
 
+/** Default subtitle when AI generation doesn't provide one. */
+export function defaultSubtitleText(info: TenantInfo): string {
+	const assistantName =
+		info.setup?.assistantName || info.app?.title || "the AI assistant";
+	const businessName =
+		info.setup?.businessName || info.app?.title || "your business";
+	const hasProducts = (info.catalog?.totalProducts ?? 0) > 0;
+	return hasProducts
+		? `A personalized demo of ${assistantName} — an AI-powered shopping assistant built for ${businessName}, helping customers discover products, get recommendations, and make purchases.`
+		: `A personalized demo of ${assistantName} — an AI-powered assistant built for ${businessName}, helping visitors learn about services, get answers, and take action.`;
+}
+
+/** Format speed factor as a filename label. 2 → "2x", 0.5 → "2th" */
+export function speedLabel(speed: number): string {
+	return speed < 1
+		? `${(1 / speed).toFixed(1).replace(/\.0$/, "")}th`
+		: `${speed.toString().replace(/\.0$/, "")}x`;
+}
+
 // ─── Voice clip inspection ───────────────────────────────────────────
 
 export interface VoiceClip {
@@ -539,15 +558,12 @@ export async function renderSpeedVideo(
 	}
 
 	// Build output filename
-	const speedLabel =
-		speed < 1
-			? `${(1 / speed).toFixed(1).replace(/\.0$/, "")}th`
-			: `${speed.toString().replace(/\.0$/, "")}x`;
+	const label = speedLabel(speed);
 	const base = videoFile.replace(".webm", "");
-	const outputFile = `${base}-speed-${speedLabel}.webm`;
+	const outputFile = `${base}-speed-${label}.webm`;
 	const outputPath = path.join(dir, outputFile);
 
-	onProgress?.(`Rendering at ${speedLabel} speed...`);
+	onProgress?.(`Rendering at ${label} speed...`);
 
 	// Check if video has audio
 	const { stdout: probeStreams } = await execP("ffprobe", [
@@ -800,10 +816,16 @@ export async function composeVideo(
 		await execP(
 			"ffmpeg",
 			[
-				"-f", "concat", "-safe", "0",
-				"-i", concatListPath,
-				"-c", "copy",
-				"-y", outputPath,
+				"-f",
+				"concat",
+				"-safe",
+				"0",
+				"-i",
+				concatListPath,
+				"-c",
+				"copy",
+				"-y",
+				outputPath,
 			],
 			{ maxBuffer: 10 * 1024 * 1024 },
 		);
@@ -820,11 +842,22 @@ export async function composeVideo(
 		await execP(
 			"ffmpeg",
 			[
-				"-f", "concat", "-safe", "0",
-				"-i", concatListPath,
-				"-c:v", "libvpx-vp9", "-b:v", "2M", "-pix_fmt", "yuv420p",
-				"-c:a", "libopus",
-				"-y", outputPath,
+				"-f",
+				"concat",
+				"-safe",
+				"0",
+				"-i",
+				concatListPath,
+				"-c:v",
+				"libvpx-vp9",
+				"-b:v",
+				"2M",
+				"-pix_fmt",
+				"yuv420p",
+				"-c:a",
+				"libopus",
+				"-y",
+				outputPath,
 			],
 			{ maxBuffer: 10 * 1024 * 1024, timeout: 5 * 60 * 1000 },
 		);
@@ -907,9 +940,12 @@ export async function publishRecording(
 	opts?: {
 		force?: boolean;
 		userId?: number;
+		email?: string;
+		autoCreateUser?: boolean;
 		tagline?: string;
 		inventoryDescription?: string;
 		subtitle?: string;
+		generatedContent?: Record<string, unknown>;
 	},
 ): Promise<PublishResult> {
 	const bestVideo = pickBestVideo(dir);
@@ -945,10 +981,13 @@ export async function publishRecording(
 		widgetUrl: config?.widgetUrl as string | undefined,
 		force: opts?.force,
 		userId: opts?.userId,
+		email: opts?.email,
+		autoCreateUser: opts?.autoCreateUser,
 		subtitle: opts?.subtitle,
+		generatedContent: opts?.generatedContent,
 	});
 
-	return {
+	const publishResult: PublishResult = {
 		url: result.url,
 		video: bestVideo,
 		tenantSlug,
@@ -960,4 +999,35 @@ export async function publishRecording(
 		publishedId: result.publishedId,
 		version: result.version,
 	};
+
+	// Send outreach templates to user's email (fire-and-forget)
+	const outreachEmail = opts?.email;
+	const baseUrl = process.env.RAG_CHATBOT_BASE_URL;
+	const apiKey = process.env.FIRST_IMPRESSION_API_KEY;
+	if (outreachEmail && baseUrl && apiKey) {
+		fetch(`${baseUrl}/api/first-impression/outreach-email`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${apiKey}`,
+			},
+			body: JSON.stringify({
+				to: outreachEmail,
+				businessName: publishResult.businessName,
+				assistantName: publishResult.assistantName,
+				demoUrl: publishResult.url,
+			}),
+		})
+			.then((r) => {
+				if (r.ok)
+					console.log(`[Publish] Outreach email sent to ${outreachEmail}`);
+				else
+					r.text().then((t) =>
+						console.error(`[Publish] Outreach email failed (${r.status}):`, t),
+					);
+			})
+			.catch((err) => console.error("[Publish] Outreach email error:", err));
+	}
+
+	return publishResult;
 }
