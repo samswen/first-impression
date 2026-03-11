@@ -362,6 +362,7 @@ body { ${bgStyle} }
 			emit("action-end", "Zoomed in", "zoom-in");
 
 			// --- Queries ---
+			let formSubmitted = false;
 			for (let i = 0; i < this.config.queries.length; i++) {
 				if (signal?.aborted) throw new Error("Cancelled");
 				const query = this.config.queries[i];
@@ -379,8 +380,9 @@ body { ${bgStyle} }
 				}
 
 				// Handle contact form — check after every response since the agent
-				// can request contact info for any query, not just predictable ones
-				{
+				// can request contact info for any query, not just predictable ones.
+				// Only fill once per session; the form may linger in the DOM after submission.
+				if (!formSubmitted) {
 					const form = panel.locator(".xinfer-followup-form");
 					const hasForm = await form
 						.waitFor({ state: "visible", timeout: 3_000 })
@@ -416,6 +418,7 @@ body { ${bgStyle} }
 						emit("progress", "Response complete");
 
 						await page.waitForTimeout(PAUSE_AFTER_RESPONSE);
+						formSubmitted = true;
 					}
 				}
 
