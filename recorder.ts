@@ -378,21 +378,12 @@ body { ${bgStyle} }
 					await page.waitForTimeout(PAUSE_AFTER_RESPONSE);
 				}
 
-				// Handle contact form when query mentions checkout, follow-up, or contact request
-				const triggersForm =
-					/check\s*out/i.test(query) ||
-					/follow\s*up/i.test(query) ||
-					/talk to someone/i.test(query) ||
-					/reach out/i.test(query) ||
-					/contact/i.test(query) ||
-					/call me/i.test(query) ||
-					/get in touch/i.test(query) ||
-					/schedule|book|appointment/i.test(query) ||
-					/speak (to|with)/i.test(query);
-				if (triggersForm) {
+				// Handle contact form — check after every response since the agent
+				// can request contact info for any query, not just predictable ones
+				{
 					const form = panel.locator(".xinfer-followup-form");
 					const hasForm = await form
-						.waitFor({ state: "visible", timeout: 15_000 })
+						.waitFor({ state: "visible", timeout: 3_000 })
 						.then(() => true)
 						.catch(() => false);
 
