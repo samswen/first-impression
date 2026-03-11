@@ -41,31 +41,40 @@ export interface RecordingResult {
 	timeline: TimelineEntry[];
 }
 
+/** Pattern matching media file URLs to block during snapshot. */
+const MEDIA_URL_PATTERN =
+	/\.(mp4|webm|ogg|ogv|m3u8|ts|m4s|mpd|avi|mov|flv|wmv)(\?|#|$)/i;
+
 /**
- * Replace broken <video>/<audio> elements with their poster image or a
- * black placeholder. This prevents the browser's "media could not be loaded"
- * error chrome from appearing in screenshots.
- *
- * Returns the number of elements fixed.
+ * Load a page for snapshotting. Blocks media requests (video/audio files)
+ * at the network level so the browser never shows "media could not be loaded"
+ * error chrome. After the page settles, replaces any <video> elements with
+ * their poster image or a black placeholder to preserve layout.
  */
-async function fixBrokenMedia(
+async function loadPageForSnapshot(
 	page: Page,
+	url: string,
 	emit: (type: ProgressEvent["type"], message: string) => void,
-): Promise<number> {
+): Promise<void> {
+	// Block media file requests before navigating — prevents ERR_ABORTED
+	// error chrome from ever appearing
+	await page.route(
+		(reqUrl) => MEDIA_URL_PATTERN.test(reqUrl.pathname),
+		(route) => route.abort(),
+	);
+
+	await page.goto(url, { waitUntil: "load", timeout: 60_000 });
+	await page.waitForTimeout(3000);
+
+	// Replace <video> elements with poster or black placeholder
 	const fixed = await page.evaluate(() => {
 		let count = 0;
 		for (const video of document.querySelectorAll("video")) {
-			// Check for error state or failed network state (NETWORK_NO_SOURCE = 3)
-			const hasError = video.error !== null || video.networkState === 3;
-			if (!hasError) continue;
-
 			const poster = video.poster;
-			const style = window.getComputedStyle(video);
-			const w = video.offsetWidth || parseInt(style.width, 10) || 0;
-			const h = video.offsetHeight || parseInt(style.height, 10) || 0;
+			const w = video.offsetWidth;
+			const h = video.offsetHeight;
 
 			if (poster) {
-				// Replace with poster image
 				const img = document.createElement("img");
 				img.src = poster;
 				img.style.width = w ? `${w}px` : "100%";
@@ -73,45 +82,26 @@ async function fixBrokenMedia(
 				img.style.objectFit = "cover";
 				img.style.display = "block";
 				video.replaceWith(img);
-			} else {
-				// No poster — replace with black div to fill the space
+			} else if (w && h) {
 				const div = document.createElement("div");
-				div.style.width = w ? `${w}px` : "100%";
-				div.style.height = h ? `${h}px` : "100%";
+				div.style.width = `${w}px`;
+				div.style.height = `${h}px`;
 				div.style.background = "#000";
 				video.replaceWith(div);
+			} else {
+				video.remove();
 			}
 			count++;
-		}
-
-		// Hide broken audio elements (no visual replacement needed)
-		for (const audio of document.querySelectorAll("audio")) {
-			if (audio.error !== null || audio.networkState === 3) {
-				(audio as HTMLElement).style.display = "none";
-				count++;
-			}
 		}
 		return count;
 	});
 
 	if (fixed > 0) {
-		emit("progress", `Fixed ${fixed} broken media element(s) in snapshot`);
+		emit("progress", `Replaced ${fixed} video element(s) in snapshot`);
 	}
-	return fixed;
-}
 
-/**
- * Load a page for snapshotting. After the page settles, fix any broken
- * media elements so their error chrome doesn't appear in screenshots.
- */
-async function loadPageForSnapshot(
-	page: Page,
-	url: string,
-	emit: (type: ProgressEvent["type"], message: string) => void,
-): Promise<void> {
-	await page.goto(url, { waitUntil: "load", timeout: 60_000 });
-	await page.waitForTimeout(3000);
-	await fixBrokenMedia(page, emit);
+	// Clean up route handler
+	await page.unroute((reqUrl) => MEDIA_URL_PATTERN.test(reqUrl.pathname));
 }
 
 export class Recorder {
