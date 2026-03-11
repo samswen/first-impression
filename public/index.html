@@ -1182,8 +1182,23 @@
     // Seed tenant ID from ?id= query param (overrides saved state)
     const urlParams = new URLSearchParams(window.location.search);
     const idParam = urlParams.get('id');
-    if (idParam && /^\d+$/.test(idParam)) {
+    const restoredTenant = document.getElementById('rec-tenant-id').value.trim();
+    if (idParam && /^\d+$/.test(idParam) && idParam !== restoredTenant) {
       document.getElementById('rec-tenant-id').value = idParam;
+
+      // Restore per-tenant form state, or clear stale fields from previous tenant
+      const tenantForm = loadTenantFormState(idParam);
+      document.getElementById('rec-url').value = tenantForm?.url || '';
+      document.getElementById('rec-widget-url').value = tenantForm?.widgetUrl || '';
+      queriesState = tenantForm?.queries?.length ? tenantForm.queries : [];
+      introTextValue = tenantForm?.introText || '';
+      outroTextValue = tenantForm?.outroText || '';
+      subtitleValue = tenantForm?.subtitle || '';
+      taglineValue = tenantForm?.tagline || '';
+      inventoryDescriptionValue = tenantForm?.inventoryDescription || '';
+      taglineOriginal = tenantForm?.taglineOriginal || '';
+      inventoryDescriptionOriginal = tenantForm?.inventoryDescriptionOriginal || '';
+
       saveFormState();
     }
 
