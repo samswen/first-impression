@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright";
+import { chromium, type Page } from "playwright";
 import {
 	PAUSE_AFTER_RESPONSE,
 	resetZoom,
@@ -39,6 +39,53 @@ export interface RecordingResult {
 	dir: string;
 	videoPath: string;
 	timeline: TimelineEntry[];
+}
+
+/**
+ * Check if any <video> or <audio> elements on the page have a MediaError.
+ * Returns the number of elements with errors.
+ */
+async function countMediaErrors(page: Page): Promise<number> {
+	return page.evaluate(() => {
+		let errors = 0;
+		for (const el of document.querySelectorAll("video, audio")) {
+			if ((el as HTMLMediaElement).error) errors++;
+		}
+		return errors;
+	});
+}
+
+/**
+ * Load a page and retry (reload) if media elements fail to load.
+ * This catches the "media could not be loaded" browser error that
+ * appears when a <video>/<audio> source fails on first load.
+ */
+async function loadPageWithMediaRetry(
+	page: Page,
+	url: string,
+	maxRetries: number,
+	emit: (type: ProgressEvent["type"], message: string) => void,
+): Promise<void> {
+	for (let attempt = 1; attempt <= maxRetries; attempt++) {
+		await page.goto(url, { waitUntil: "load", timeout: 60_000 });
+		await page.waitForTimeout(3000);
+
+		const mediaErrors = await countMediaErrors(page);
+		if (mediaErrors === 0) return;
+
+		if (attempt < maxRetries) {
+			emit(
+				"progress",
+				`Detected ${mediaErrors} media error(s), reloading page (attempt ${attempt + 1}/${maxRetries})...`,
+			);
+			await page.waitForTimeout(1000);
+		} else {
+			emit(
+				"progress",
+				`Still ${mediaErrors} media error(s) after ${maxRetries} attempts, continuing anyway...`,
+			);
+		}
+	}
 }
 
 export class Recorder {
@@ -91,11 +138,7 @@ export class Recorder {
 					ignoreHTTPSErrors: true,
 				});
 				const snapPage = await snapContext.newPage();
-				await snapPage.goto(this.config.url, {
-					waitUntil: "load",
-					timeout: 60_000,
-				});
-				await snapPage.waitForTimeout(3000);
+				await loadPageWithMediaRetry(snapPage, this.config.url, 3, emit);
 
 				const snapshotPath = path.join(dir, "snapshot.png");
 				await snapPage.screenshot({
@@ -110,11 +153,7 @@ export class Recorder {
 					ignoreHTTPSErrors: true,
 				});
 				const mobilePage = await mobileContext.newPage();
-				await mobilePage.goto(this.config.url, {
-					waitUntil: "load",
-					timeout: 60_000,
-				});
-				await mobilePage.waitForTimeout(3000);
+				await loadPageWithMediaRetry(mobilePage, this.config.url, 3, emit);
 
 				const snapshotMobilePath = path.join(dir, "snapshot-mobile.png");
 				await mobilePage.screenshot({

@@ -56,7 +56,9 @@ function buildCliArgs(task: QueueTask): string[] {
 
 const CLI_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
-function runCli(args: string[]): Promise<{ exitCode: number; timedOut: boolean }> {
+function runCli(
+	args: string[],
+): Promise<{ exitCode: number; timedOut: boolean }> {
 	return new Promise((resolve, reject) => {
 		const child = spawn("tsx", ["cli.ts", ...args], {
 			cwd: import.meta.dirname,
