@@ -1,7 +1,12 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { chromium, type Page } from "playwright";
+
+const execP = promisify(execFile);
+
 import {
 	PAUSE_AFTER_RESPONSE,
 	resetZoom,
@@ -46,37 +51,90 @@ const MEDIA_URL_PATTERN =
 	/\.(mp4|webm|ogg|ogv|m3u8|ts|m4s|mpd|avi|mov|flv|wmv)(\?|#|$)/i;
 
 /**
- * Load a page for snapshotting. Blocks media requests (video/audio files)
- * at the network level so the browser never shows "media could not be loaded"
- * error chrome. After the page settles, replaces any <video> elements with
- * their poster image or a black placeholder to preserve layout.
+ * Extract the first frame of a video URL as a JPEG data URI using ffmpeg.
+ * Returns null if extraction fails.
+ */
+async function extractFirstFrame(videoUrl: string): Promise<string | null> {
+	const tmpFile = path.join(
+		__dirname,
+		`tmp-frame-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`,
+	);
+	try {
+		await execP(
+			"ffmpeg",
+			["-i", videoUrl, "-frames:v", "1", "-q:v", "2", "-y", tmpFile],
+			{ timeout: 15_000 },
+		);
+		if (fs.existsSync(tmpFile) && fs.statSync(tmpFile).size > 0) {
+			const buf = fs.readFileSync(tmpFile);
+			return `data:image/jpeg;base64,${buf.toString("base64")}`;
+		}
+		return null;
+	} catch {
+		return null;
+	} finally {
+		if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+	}
+}
+
+/**
+ * Load a page for snapshotting. Blocks media requests at the network level
+ * so the browser never shows "media could not be loaded" error chrome.
+ * Collects blocked media URLs, extracts first frames with ffmpeg, and
+ * replaces <video> elements with the extracted frame images.
  */
 async function loadPageForSnapshot(
 	page: Page,
 	url: string,
 	emit: (type: ProgressEvent["type"], message: string) => void,
 ): Promise<void> {
-	// Block media file requests before navigating — prevents ERR_ABORTED
-	// error chrome from ever appearing
-	await page.route(
-		(reqUrl) => MEDIA_URL_PATTERN.test(reqUrl.pathname),
-		(route) => route.abort(),
-	);
+	// Collect unique media URLs while blocking them
+	const blockedUrls = new Set<string>();
+	const routeMatcher = (reqUrl: URL) => MEDIA_URL_PATTERN.test(reqUrl.pathname);
+
+	await page.route(routeMatcher, (route) => {
+		blockedUrls.add(route.request().url());
+		route.abort();
+	});
 
 	await page.goto(url, { waitUntil: "load", timeout: 60_000 });
 	await page.waitForTimeout(3000);
 
-	// Replace <video> elements with poster or black placeholder
-	const fixed = await page.evaluate(() => {
+	// Extract first frame from each blocked video URL
+	const frameMap: Record<string, string> = {};
+	if (blockedUrls.size > 0) {
+		emit(
+			"progress",
+			`Extracting first frame from ${blockedUrls.size} blocked video(s)...`,
+		);
+		for (const mediaUrl of blockedUrls) {
+			const dataUri = await extractFirstFrame(mediaUrl);
+			if (dataUri) {
+				frameMap[mediaUrl] = dataUri;
+			}
+		}
+		emit(
+			"progress",
+			`Extracted ${Object.keys(frameMap).length}/${blockedUrls.size} video frame(s)`,
+		);
+	}
+
+	// Collect video src URLs from the DOM, then replace elements
+	const fixed = await page.evaluate((frames: Record<string, string>) => {
 		let count = 0;
 		for (const video of document.querySelectorAll("video")) {
-			const poster = video.poster;
+			const src =
+				video.src ||
+				video.currentSrc ||
+				video.querySelector("source")?.src ||
+				"";
+			const dataUri = frames[src] || video.poster;
 			const w = video.offsetWidth;
 			const h = video.offsetHeight;
 
-			if (poster) {
+			if (dataUri) {
 				const img = document.createElement("img");
-				img.src = poster;
+				img.src = dataUri;
 				img.style.width = w ? `${w}px` : "100%";
 				img.style.height = h ? `${h}px` : "auto";
 				img.style.objectFit = "cover";
@@ -94,14 +152,13 @@ async function loadPageForSnapshot(
 			count++;
 		}
 		return count;
-	});
+	}, frameMap);
 
 	if (fixed > 0) {
 		emit("progress", `Replaced ${fixed} video element(s) in snapshot`);
 	}
 
-	// Clean up route handler
-	await page.unroute((reqUrl) => MEDIA_URL_PATTERN.test(reqUrl.pathname));
+	await page.unroute(routeMatcher);
 }
 
 export class Recorder {
