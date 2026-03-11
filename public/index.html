@@ -1210,9 +1210,9 @@
 
     loadRecordings().then(() => {
       const lastId = getLastSelected();
-      // Only restore last selected if the sidebar has recordings for this tenant
-      const hasRecordings = document.querySelector('#recordings-list .recording-item');
-      if (lastId && hasRecordings) selectRecording(lastId);
+      // Only restore last selected if it belongs to the current tenant's recordings
+      const match = lastId && document.querySelector(`#recordings-list .recording-item[onclick*="'${lastId}'"]`);
+      if (match) selectRecording(lastId);
     });
   }
 
