@@ -1362,6 +1362,15 @@
     if (tagEl) tagEl.value = taglineValue;
     if (descEl) descEl.value = inventoryDescriptionValue;
 
+    // Clear the detail panel — previous tenant's recording is no longer relevant
+    selectedId = null;
+    activeVideo = null;
+    cachedData = null;
+    document.getElementById('detail-panel').innerHTML =
+      '<div class="empty-state">Select a recording</div>';
+    speedExists = introExists = outroExists = voicedExists = finalExists = false;
+    updateActionButtons();
+
     syncTenantIdToUrl();
     // Fetch tenant info to populate URL and widget URL, then save
     // (also compares originals and resets if upstream changed)
