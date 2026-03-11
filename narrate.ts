@@ -323,7 +323,13 @@ async function renderTextOverlay(
 	text: string,
 	outputPath: string,
 ): Promise<void> {
-	const wrapped = wordWrap(text, 45);
+	// Strip CR/LF and collapse whitespace — AI-generated text often
+	// contains unwanted line breaks that cause single-word rows
+	const clean = text
+		.replace(/[\r\n]+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+	const wrapped = wordWrap(clean, 45);
 	const lines = wrapped
 		.split("\n")
 		.map((l) => `<span>${escapeHtml(l)}</span>`)
