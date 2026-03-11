@@ -278,6 +278,66 @@ export function generateDemoPage(opts: DemoPageOptions): string {
 
     .play-overlay.hidden { display: none; }
 
+    /* Custom video controls */
+    .video-controls {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+      height: 52px;
+      background: linear-gradient(transparent, rgba(0,0,0,0.85));
+      transition: opacity 0.3s;
+      z-index: 2;
+    }
+    .video-controls.vc-hidden { opacity: 0; pointer-events: none; }
+    .vc-play {
+      background: none;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      padding: 8px;
+      min-width: 48px;
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .vc-play:hover { color: #c8f64a; }
+    .vc-progress {
+      flex: 1;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      position: relative;
+    }
+    .vc-track {
+      width: 100%;
+      height: 4px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .vc-progress:hover .vc-track { height: 6px; }
+    .vc-filled {
+      height: 100%;
+      background: #c8f64a;
+      border-radius: 2px;
+      width: 0%;
+    }
+    .vc-time {
+      font-size: 13px;
+      color: rgba(255,255,255,0.7);
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
+    }
+
     .play-label {
       display: flex;
       align-items: center;
@@ -672,7 +732,7 @@ export function generateDemoPage(opts: DemoPageOptions): string {
         <h2>Your AI Assistant in Action</h2>
       </div>
       <div class="demo-video-wrap">
-        <video id="demoVideo" src="${esc(videoFilename.startsWith("http") ? videoFilename : `${baseUrl}/${videoFilename}`)}" controls playsinline preload="metadata" poster="${snapshotFilename ? `${baseUrl}/${snapshotFilename}` : ""}"></video>
+        <video id="demoVideo" src="${esc(videoFilename.startsWith("http") ? videoFilename : `${baseUrl}/${videoFilename}`)}" playsinline preload="metadata" poster="${snapshotFilename ? `${baseUrl}/${snapshotFilename}` : ""}"></video>
         <button class="play-overlay" id="playOverlay" aria-label="Play video">
           <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
             <circle cx="32" cy="32" r="32" fill="rgba(0,0,0,0.55)"/>
@@ -687,6 +747,16 @@ export function generateDemoPage(opts: DemoPageOptions): string {
             Watch with sound
           </span>
         </button>
+        <div class="video-controls vc-hidden" id="demoControls">
+          <button class="vc-play" aria-label="Play/Pause">
+            <svg class="vc-icon-play" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>
+            <svg class="vc-icon-pause" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="5" y="3" width="4" height="18"/><rect x="15" y="3" width="4" height="18"/></svg>
+          </button>
+          <div class="vc-progress">
+            <div class="vc-track"><div class="vc-filled"></div></div>
+          </div>
+          <span class="vc-time">0:00 / 0:00</span>
+        </div>
       </div>
       <p class="demo-label">Recorded live on ${esc(setup.website || tenantInfo.app.homePageUrl || "your website")}</p>
     </div>
@@ -715,7 +785,7 @@ export function generateDemoPage(opts: DemoPageOptions): string {
         <p>Go live with AI in hours, not months.</p>
       </div>
       <div class="intro-video-wrap">
-        <video id="introVideo" src="https://assets.xinfer.ai/videos/intro-xinfer-ai.mp4" controls playsinline preload="metadata"></video>
+        <video id="introVideo" src="https://assets.xinfer.ai/videos/intro-xinfer-ai.mp4" playsinline preload="metadata"></video>
         <button class="play-overlay" id="introPlayOverlay" aria-label="Play video">
           <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
             <circle cx="32" cy="32" r="32" fill="rgba(0,0,0,0.55)"/>
@@ -730,6 +800,16 @@ export function generateDemoPage(opts: DemoPageOptions): string {
             Watch with sound
           </span>
         </button>
+        <div class="video-controls vc-hidden" id="introControls">
+          <button class="vc-play" aria-label="Play/Pause">
+            <svg class="vc-icon-play" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>
+            <svg class="vc-icon-pause" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="5" y="3" width="4" height="18"/><rect x="15" y="3" width="4" height="18"/></svg>
+          </button>
+          <div class="vc-progress">
+            <div class="vc-track"><div class="vc-filled"></div></div>
+          </div>
+          <span class="vc-time">0:00 / 0:00</span>
+        </div>
       </div>
     </div>
   </section>
@@ -868,25 +948,139 @@ export function generateDemoPage(opts: DemoPageOptions): string {
 
 <script>
 (function(){
-  function initClickToPlay(videoId, overlayId) {
+  function fmt(s){
+    if(isNaN(s))return'0:00';
+    var m=Math.floor(s/60),sec=Math.floor(s%60);
+    return m+':'+(sec<10?'0':'')+sec;
+  }
+
+  function initVideo(videoId, overlayId, controlsId) {
     var v=document.getElementById(videoId);
     var o=document.getElementById(overlayId);
-    if(!v||!o)return;
+    var c=document.getElementById(controlsId);
+    if(!v||!o||!c)return;
+
+    var playBtn=c.querySelector('.vc-play');
+    var iconPlay=c.querySelector('.vc-icon-play');
+    var iconPause=c.querySelector('.vc-icon-pause');
+    var progress=c.querySelector('.vc-progress');
+    var filled=c.querySelector('.vc-filled');
+    var timeEl=c.querySelector('.vc-time');
+    var hideTimer=null;
+    var started=false;
+
+    function showControls(){
+      c.classList.remove('vc-hidden');
+    }
+    function hideControls(){
+      if(!v.paused&&!v.ended) c.classList.add('vc-hidden');
+    }
+    function resetHideTimer(){
+      clearTimeout(hideTimer);
+      showControls();
+      if(!v.paused&&!v.ended) hideTimer=setTimeout(hideControls,3000);
+    }
+    function updateIcons(){
+      if(v.paused||v.ended){
+        iconPlay.style.display='';
+        iconPause.style.display='none';
+      }else{
+        iconPlay.style.display='none';
+        iconPause.style.display='';
+      }
+    }
+
+    // Play overlay: initial "Watch with sound"
     o.addEventListener('click',function(){
       v.muted=false;
       v.play();
-      o.classList.add('hidden');
     });
+
+    // Play event
     v.addEventListener('play',function(){
+      started=true;
       o.classList.add('hidden');
+      updateIcons();
+      resetHideTimer();
     });
+
+    // Pause event
     v.addEventListener('pause',function(){
-      if(v.currentTime>0&&!v.ended)return;
-      o.classList.remove('hidden');
+      clearTimeout(hideTimer);
+      updateIcons();
+      if(!started){
+        o.classList.remove('hidden');
+        c.classList.add('vc-hidden');
+      }else{
+        showControls();
+      }
     });
+
+    // Ended event
+    v.addEventListener('ended',function(){
+      clearTimeout(hideTimer);
+      updateIcons();
+      showControls();
+    });
+
+    // Progress update
+    v.addEventListener('timeupdate',function(){
+      if(v.duration){
+        filled.style.width=(v.currentTime/v.duration*100)+'%';
+        timeEl.textContent=fmt(v.currentTime)+' / '+fmt(v.duration);
+      }
+    });
+
+    v.addEventListener('loadedmetadata',function(){
+      timeEl.textContent='0:00 / '+fmt(v.duration);
+    });
+
+    // Play/pause button
+    playBtn.addEventListener('click',function(e){
+      e.stopPropagation();
+      if(v.paused||v.ended){v.muted=false;v.play();}
+      else v.pause();
+      resetHideTimer();
+    });
+
+    // Seek on progress bar click/touch
+    function seek(e){
+      var rect=progress.getBoundingClientRect();
+      var x=(e.touches?e.touches[0].clientX:e.clientX)-rect.left;
+      var pct=Math.max(0,Math.min(1,x/rect.width));
+      if(v.duration) v.currentTime=pct*v.duration;
+      resetHideTimer();
+    }
+    progress.addEventListener('click',function(e){e.stopPropagation();seek(e);});
+    progress.addEventListener('touchend',function(e){e.stopPropagation();e.preventDefault();
+      var rect=progress.getBoundingClientRect();
+      var x=e.changedTouches[0].clientX-rect.left;
+      var pct=Math.max(0,Math.min(1,x/rect.width));
+      if(v.duration) v.currentTime=pct*v.duration;
+      resetHideTimer();
+    });
+
+    // Show controls on interaction with video area
+    var wrap=v.parentElement;
+    wrap.addEventListener('mousemove',function(){if(started)resetHideTimer();});
+    wrap.addEventListener('touchstart',function(e){
+      if(started&&!o.contains(e.target)&&!c.contains(e.target)){
+        if(c.classList.contains('vc-hidden')){
+          resetHideTimer();
+        }else if(!v.paused){
+          hideControls();
+          clearTimeout(hideTimer);
+        }
+      }
+    });
+
+    // Prevent controls clicks from bubbling to wrap
+    c.addEventListener('click',function(e){e.stopPropagation();});
+    c.addEventListener('touchstart',function(e){e.stopPropagation();});
   }
-  initClickToPlay('demoVideo','playOverlay');
-  initClickToPlay('introVideo','introPlayOverlay');
+
+  initVideo('demoVideo','playOverlay','demoControls');
+  initVideo('introVideo','introPlayOverlay','introControls');
 })();
 </script>
 ${publishedId && trackingUrl ? `<!-- Access tracking -->\n<img src="${esc(trackingUrl)}?pid=${publishedId}" width="1" height="1" alt="" style="position:absolute;left:-9999px" />` : ""}
