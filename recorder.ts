@@ -41,111 +41,77 @@ export interface RecordingResult {
 	timeline: TimelineEntry[];
 }
 
-/** Media resource types that indicate video/audio content. */
-const MEDIA_RESOURCE_TYPES = new Set(["media", "fetch", "xhr"]);
-const MEDIA_EXTENSIONS =
-	/\.(mp4|webm|ogg|m3u8|ts|m4s|mpd|mp3|wav|aac|m4a)(\?|$)/i;
-
 /**
- * Detect media failures via both network events AND DOM MediaError.
- * Returns a list of failure descriptions.
+ * Replace broken <video>/<audio> elements with their poster image or a
+ * black placeholder. This prevents the browser's "media could not be loaded"
+ * error chrome from appearing in screenshots.
+ *
+ * Returns the number of elements fixed.
  */
-async function detectMediaFailures(
+async function fixBrokenMedia(
 	page: Page,
-	failedRequests: string[],
-): Promise<string[]> {
-	const failures = [...failedRequests];
+	emit: (type: ProgressEvent["type"], message: string) => void,
+): Promise<number> {
+	const fixed = await page.evaluate(() => {
+		let count = 0;
+		for (const video of document.querySelectorAll("video")) {
+			// Check for error state or failed network state (NETWORK_NO_SOURCE = 3)
+			const hasError = video.error !== null || video.networkState === 3;
+			if (!hasError) continue;
 
-	// Also check DOM-level MediaError (catches cases where the request
-	// succeeded but the browser couldn't decode the media)
-	const domErrors = await page.evaluate(() => {
-		const errs: string[] = [];
-		for (const el of document.querySelectorAll("video, audio")) {
-			const media = el as HTMLMediaElement;
-			if (media.error) {
-				const src = media.currentSrc || media.getAttribute("src") || "unknown";
-				errs.push(`${media.tagName} error=${media.error.code} src=${src}`);
+			const poster = video.poster;
+			const style = window.getComputedStyle(video);
+			const w = video.offsetWidth || parseInt(style.width, 10) || 0;
+			const h = video.offsetHeight || parseInt(style.height, 10) || 0;
+
+			if (poster) {
+				// Replace with poster image
+				const img = document.createElement("img");
+				img.src = poster;
+				img.style.width = w ? `${w}px` : "100%";
+				img.style.height = h ? `${h}px` : "auto";
+				img.style.objectFit = "cover";
+				img.style.display = "block";
+				video.replaceWith(img);
+			} else {
+				// No poster — replace with black div to fill the space
+				const div = document.createElement("div");
+				div.style.width = w ? `${w}px` : "100%";
+				div.style.height = h ? `${h}px` : "100%";
+				div.style.background = "#000";
+				video.replaceWith(div);
+			}
+			count++;
+		}
+
+		// Hide broken audio elements (no visual replacement needed)
+		for (const audio of document.querySelectorAll("audio")) {
+			if (audio.error !== null || audio.networkState === 3) {
+				(audio as HTMLElement).style.display = "none";
+				count++;
 			}
 		}
-		return errs;
+		return count;
 	});
-	failures.push(...domErrors);
 
-	return failures;
+	if (fixed > 0) {
+		emit("progress", `Fixed ${fixed} broken media element(s) in snapshot`);
+	}
+	return fixed;
 }
 
 /**
- * Load a page and retry (reload) if media resources fail to load.
- * Monitors both network-level failures (requestfailed, HTTP errors on media
- * URLs) and DOM-level MediaError on <video>/<audio> elements.
+ * Load a page for snapshotting. After the page settles, fix any broken
+ * media elements so their error chrome doesn't appear in screenshots.
  */
-async function loadPageWithMediaRetry(
+async function loadPageForSnapshot(
 	page: Page,
 	url: string,
-	maxRetries: number,
 	emit: (type: ProgressEvent["type"], message: string) => void,
 ): Promise<void> {
-	for (let attempt = 1; attempt <= maxRetries; attempt++) {
-		const failedRequests: string[] = [];
-
-		// Listen for network-level failures on media resources
-		const onRequestFailed = (request: {
-			url: () => string;
-			resourceType: () => string;
-			failure: () => { errorText: string } | null;
-		}) => {
-			const rUrl = request.url();
-			const rType = request.resourceType();
-			if (MEDIA_RESOURCE_TYPES.has(rType) || MEDIA_EXTENSIONS.test(rUrl)) {
-				const err = request.failure()?.errorText || "unknown";
-				failedRequests.push(`requestfailed: ${err} url=${rUrl}`);
-			}
-		};
-		const onResponse = (response: {
-			url: () => string;
-			status: () => number;
-			request: () => { resourceType: () => string };
-		}) => {
-			const rUrl = response.url();
-			const rType = response.request().resourceType();
-			const status = response.status();
-			if (
-				status >= 400 &&
-				(MEDIA_RESOURCE_TYPES.has(rType) || MEDIA_EXTENSIONS.test(rUrl))
-			) {
-				failedRequests.push(`HTTP ${status} url=${rUrl}`);
-			}
-		};
-
-		page.on("requestfailed", onRequestFailed);
-		page.on("response", onResponse);
-
-		try {
-			await page.goto(url, { waitUntil: "load", timeout: 60_000 });
-			// Wait for media elements to start loading / fail
-			await page.waitForTimeout(3000);
-		} finally {
-			page.removeListener("requestfailed", onRequestFailed);
-			page.removeListener("response", onResponse);
-		}
-
-		const failures = await detectMediaFailures(page, failedRequests);
-		if (failures.length === 0) return;
-
-		const summary = failures.join("; ");
-		if (attempt < maxRetries) {
-			emit(
-				"progress",
-				`Detected media failure (${summary}), reloading page (attempt ${attempt + 1}/${maxRetries})...`,
-			);
-			await page.waitForTimeout(2000);
-		} else {
-			emit(
-				"progress",
-				`Still media failures after ${maxRetries} attempts (${summary}), continuing anyway...`,
-			);
-		}
-	}
+	await page.goto(url, { waitUntil: "load", timeout: 60_000 });
+	await page.waitForTimeout(3000);
+	await fixBrokenMedia(page, emit);
 }
 
 export class Recorder {
@@ -198,7 +164,7 @@ export class Recorder {
 					ignoreHTTPSErrors: true,
 				});
 				const snapPage = await snapContext.newPage();
-				await loadPageWithMediaRetry(snapPage, this.config.url, 3, emit);
+				await loadPageForSnapshot(snapPage, this.config.url, emit);
 
 				const snapshotPath = path.join(dir, "snapshot.png");
 				await snapPage.screenshot({
@@ -213,7 +179,7 @@ export class Recorder {
 					ignoreHTTPSErrors: true,
 				});
 				const mobilePage = await mobileContext.newPage();
-				await loadPageWithMediaRetry(mobilePage, this.config.url, 3, emit);
+				await loadPageForSnapshot(mobilePage, this.config.url, emit);
 
 				const snapshotMobilePath = path.join(dir, "snapshot-mobile.png");
 				await mobilePage.screenshot({
