@@ -3633,13 +3633,25 @@ Best,`;
     btn.textContent = 'Generating...';
     status.innerHTML = '<span style="color:#888">Adding voiceover...</span>';
 
+    const recId = selectedId;
+    let succeeded = false;
+    let cancelled = false;
+
     try {
-      const res = await fetch(`/api/recordings/${selectedId}/voiceover`, {
+      const res = await fetch(`/api/recordings/${recId}/voiceover`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tenantId: Number(tenantId), video }),
         signal: activeAbort.signal,
       });
+
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => '');
+        let msg = `Server error ${res.status}`;
+        try { msg = JSON.parse(errBody).error || msg; } catch {}
+        status.innerHTML = `<span style="color:#ef4444">${msg}</span>`;
+        return;
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -3657,43 +3669,29 @@ Best,`;
           const evt = JSON.parse(line.slice(6));
           status.innerHTML = `<span style="color:${evt.type === 'error' ? '#ef4444' : evt.type === 'done' ? '#22c55e' : '#888'}">${evt.message}</span>`;
 
-          if (evt.type === 'done') {
-            btn.textContent = 'Add Voice to Video';
-            setActionBusy(false);
-            const voicedFile = video.replace('.webm', '-voiced.webm');
-            loadRecordings();
-            await refreshRecording(selectedId, voicedFile);
-            checkVideoStates();
-            return;
-          }
-          if (evt.type === 'error') {
-            btn.textContent = 'Add Voice to Video';
-            setActionBusy(false);
-            return;
-          }
+          if (evt.type === 'done') { succeeded = true; return; }
+          if (evt.type === 'error') { return; }
         }
       }
       // Process any remaining data in buffer
       if (buffer.trim().startsWith('data: ')) {
         const evt = JSON.parse(buffer.trim().slice(6));
-        if (evt.type === 'done') {
-          btn.textContent = 'Add Voice to Video';
-          setActionBusy(false);
-          const voicedFile = video.replace('.webm', '-voiced.webm');
-          loadRecordings();
-          await refreshRecording(selectedId, voicedFile);
-          checkVideoStates();
-          return;
-        }
+        status.innerHTML = `<span style="color:${evt.type === 'error' ? '#ef4444' : evt.type === 'done' ? '#22c55e' : '#888'}">${evt.message}</span>`;
+        if (evt.type === 'done') succeeded = true;
       }
-      // Fallthrough: stream ended without done/error event
-      btn.textContent = 'Add Voice to Video';
-      setActionBusy(false);
     } catch (err) {
-      if (err.name === 'AbortError') return;
+      if (err.name === 'AbortError') { cancelled = true; return; }
       status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
-      btn.textContent = 'Add Voice to Video';
-      setActionBusy(false);
+    } finally {
+      if (!cancelled) {
+        // Always refresh UI — the voiced video may exist from this or a prior run
+        btn.textContent = 'Add Voice to Video';
+        setActionBusy(false);
+        const voicedFile = video.replace('.webm', '-voiced.webm');
+        loadRecordings();
+        await refreshRecording(recId, succeeded ? voicedFile : undefined);
+        await checkVideoStates();
+      }
     }
   }
 
