@@ -16,7 +16,9 @@ const execP = promisify(execFile);
 const NAME = process.argv[2] ?? "1-install";
 const SCREENCAST_DIR = path.join(__dirname, "recordings/screencast");
 const VOICEOVER_JSON = path.join(SCREENCAST_DIR, `${NAME}-voiceover.json`);
-const VIDEO_INPUT = fs.existsSync(path.join(SCREENCAST_DIR, `${NAME}-trimmed.webm`))
+const VIDEO_INPUT = fs.existsSync(
+	path.join(SCREENCAST_DIR, `${NAME}-trimmed.webm`),
+)
 	? path.join(SCREENCAST_DIR, `${NAME}-trimmed.webm`)
 	: path.join(SCREENCAST_DIR, `${NAME}.webm`);
 const VIDEO_OUTPUT = path.join(SCREENCAST_DIR, `${NAME}-voiced.webm`);
@@ -30,9 +32,12 @@ interface VoiceoverSegment {
 
 async function getAudioDuration(filePath: string): Promise<number> {
 	const { stdout } = await execP("ffprobe", [
-		"-v", "error",
-		"-show_entries", "format=duration",
-		"-of", "csv=p=0",
+		"-v",
+		"error",
+		"-show_entries",
+		"format=duration",
+		"-of",
+		"csv=p=0",
 		filePath,
 	]);
 	return Number.parseFloat(stdout.trim());
@@ -55,28 +60,47 @@ async function main() {
 	// 1. Generate TTS for each segment
 	console.log(`Generating ${segments.length} voiceover clips...`);
 
-	const clips: { path: string; start: number; duration: number; text: string }[] = [];
+	const clips: {
+		path: string;
+		start: number;
+		duration: number;
+		text: string;
+	}[] = [];
 
 	for (let i = 0; i < segments.length; i++) {
 		const seg = segments[i];
-		const clipPath = path.join(CLIPS_DIR, `clip-${String(i).padStart(2, "0")}.mp3`);
+		const clipPath = path.join(
+			CLIPS_DIR,
+			`clip-${String(i).padStart(2, "0")}.mp3`,
+		);
 
 		// Skip if already generated (cache)
 		if (fs.existsSync(clipPath) && fs.statSync(clipPath).size > 0) {
 			const duration = await getAudioDuration(clipPath);
-			console.log(`  [${i + 1}/${segments.length}] cached (${duration.toFixed(1)}s): "${seg.text.slice(0, 60)}..."`);
-			clips.push({ path: clipPath, start: seg.start, duration, text: seg.text });
+			console.log(
+				`  [${i + 1}/${segments.length}] cached (${duration.toFixed(1)}s): "${seg.text.slice(0, 60)}..."`,
+			);
+			clips.push({
+				path: clipPath,
+				start: seg.start,
+				duration,
+				text: seg.text,
+			});
 			continue;
 		}
 
-		console.log(`  [${i + 1}/${segments.length}] TTS: "${seg.text.slice(0, 60)}..."`);
+		console.log(
+			`  [${i + 1}/${segments.length}] TTS: "${seg.text.slice(0, 60)}..."`,
+		);
 		const audioBuffer = await textToSpeech({ text: seg.text });
 		fs.writeFileSync(clipPath, audioBuffer);
 
 		const duration = await getAudioDuration(clipPath);
 		const available = seg.end - seg.start;
 		if (duration > available + 1) {
-			console.warn(`    WARNING: clip is ${duration.toFixed(1)}s but window is ${available.toFixed(1)}s`);
+			console.warn(
+				`    WARNING: clip is ${duration.toFixed(1)}s but window is ${available.toFixed(1)}s`,
+			);
 		}
 		clips.push({ path: clipPath, start: seg.start, duration, text: seg.text });
 	}
@@ -84,21 +108,28 @@ async function main() {
 	// Save manifest
 	fs.writeFileSync(
 		path.join(CLIPS_DIR, "manifest.json"),
-		JSON.stringify(clips.map((c, i) => ({
-			file: `clip-${String(i).padStart(2, "0")}.mp3`,
-			start: c.start,
-			duration: c.duration,
-			text: c.text,
-		})), null, 2),
+		JSON.stringify(
+			clips.map((c, i) => ({
+				file: `clip-${String(i).padStart(2, "0")}.mp3`,
+				start: c.start,
+				duration: c.duration,
+				text: c.text,
+			})),
+			null,
+			2,
+		),
 	);
 
 	console.log(`\n${clips.length} clips ready. Composing audio mix...`);
 
 	// 2. Get video duration
 	const { stdout: videoDurOut } = await execP("ffprobe", [
-		"-v", "error",
-		"-show_entries", "format=duration",
-		"-of", "csv=p=0",
+		"-v",
+		"error",
+		"-show_entries",
+		"format=duration",
+		"-of",
+		"csv=p=0",
 		VIDEO_INPUT,
 	]);
 	const videoDuration = Number.parseFloat(videoDurOut.trim());
@@ -116,9 +147,7 @@ async function main() {
 	for (let i = 0; i < clips.length; i++) {
 		const delayMs = Math.round(clips[i].start * 1000);
 		const inputIdx = i + 1;
-		filterParts.push(
-			`[${inputIdx}:a]adelay=${delayMs}|${delayMs}[a${i}]`,
-		);
+		filterParts.push(`[${inputIdx}:a]adelay=${delayMs}|${delayMs}[a${i}]`);
 		mixInputs.push(`[a${i}]`);
 	}
 
@@ -127,13 +156,20 @@ async function main() {
 	);
 
 	args.push(
-		"-filter_complex", filterParts.join(";"),
-		"-map", "0:v",
-		"-map", "[aout]",
-		"-c:v", "copy",
-		"-c:a", "libopus",
-		"-t", String(videoDuration),
-		"-y", VIDEO_OUTPUT,
+		"-filter_complex",
+		filterParts.join(";"),
+		"-map",
+		"0:v",
+		"-map",
+		"[aout]",
+		"-c:v",
+		"copy",
+		"-c:a",
+		"libopus",
+		"-t",
+		String(videoDuration),
+		"-y",
+		VIDEO_OUTPUT,
 	);
 
 	console.log("Running ffmpeg...");

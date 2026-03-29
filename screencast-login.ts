@@ -12,7 +12,8 @@ import path from "node:path";
 import { chromium } from "playwright";
 import { AUTH_STATE_PATH, waitForEnter } from "./screencast-helpers";
 
-const LOGIN_URL = "https://admin.shopify.com/store/demo-store-123456789552125479037";
+const LOGIN_URL =
+	"https://admin.shopify.com/store/demo-store-123456789552125479037";
 
 async function main() {
 	console.log("── Shopify Auth Setup ──\n");
@@ -26,9 +27,14 @@ async function main() {
 	});
 
 	const page = await context.newPage();
-	await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
+	await page.goto(LOGIN_URL, {
+		waitUntil: "domcontentloaded",
+		timeout: 60_000,
+	});
 
-	await waitForEnter("Log into Shopify, wait for admin dashboard to fully load");
+	await waitForEnter(
+		"Log into Shopify, wait for admin dashboard to fully load",
+	);
 
 	// Save cookies + localStorage
 	await context.storageState({ path: AUTH_STATE_PATH });

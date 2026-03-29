@@ -104,8 +104,11 @@ async function uploadWithPresignedUrl(
 	contentType: string,
 	cacheControl = "public, max-age=31536000, immutable",
 ): Promise<void> {
-	// Convert Buffer to Uint8Array for fetch compatibility
-	const fetchBody = Buffer.isBuffer(body) ? new Uint8Array(body) : body;
+	// Convert Buffer to Uint8Array for fetch compatibility.
+	// Must use buffer/byteOffset/byteLength to avoid picking up Node's pooled ArrayBuffer.
+	const fetchBody = Buffer.isBuffer(body)
+		? new Uint8Array(body.buffer, body.byteOffset, body.byteLength)
+		: body;
 
 	const res = await fetch(presignedUrl, {
 		method: "PUT",

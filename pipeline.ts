@@ -10,11 +10,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { chromium } from "playwright";
-import { getPlaywrightProxy } from "./proxy";
 import { generateDemoPage } from "./demo-page";
 import { detectFreezes } from "./freeze-detect";
 import type { SceneResult } from "./narrate";
 import { generateIntro, generateOutro } from "./narrate";
+import { getPlaywrightProxy } from "./proxy";
 import { type ProgressEvent, Recorder, type TimelineEntry } from "./recorder";
 import type { TenantInfo } from "./tenant";
 import { fetchTenantInfo } from "./tenant";
@@ -916,7 +916,10 @@ export async function captureMobileSnapshot(
 
 	onProgress?.(`Capturing mobile snapshot of ${url}...`);
 
-	const browser = await chromium.launch({ headless: true, proxy: getPlaywrightProxy() });
+	const browser = await chromium.launch({
+		headless: true,
+		proxy: await getPlaywrightProxy(),
+	});
 	const context = await browser.newContext({
 		viewport: { width: 390, height: 844 },
 		ignoreHTTPSErrors: true,

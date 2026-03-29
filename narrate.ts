@@ -97,7 +97,10 @@ async function screenshotWithWidget(
 	url: string,
 	outputPath: string,
 ): Promise<void> {
-	const browser = await chromium.launch({ headless: true, proxy: getPlaywrightProxy() });
+	const browser = await chromium.launch({
+		headless: true,
+		proxy: await getPlaywrightProxy(),
+	});
 	const context = await browser.newContext({
 		viewport: { width: 1920, height: 1080 },
 		ignoreHTTPSErrors: true,

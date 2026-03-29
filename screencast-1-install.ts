@@ -14,8 +14,8 @@ import {
 	finishRecording,
 	log,
 	pause,
-	startRecording,
 	type ScreencastContext,
+	startRecording,
 } from "./screencast-helpers";
 
 const INSTALL_URL =
@@ -46,7 +46,15 @@ function appFrame(page: Page): FrameLocator {
 /** Show cursor at element position, pause, show click ripple, then click and hide. */
 async function cursorClick(
 	page: Page,
-	locator: { boundingBox: () => Promise<{ x: number; y: number; width: number; height: number } | null>; click: () => Promise<void> },
+	locator: {
+		boundingBox: () => Promise<{
+			x: number;
+			y: number;
+			width: number;
+			height: number;
+		} | null>;
+		click: () => Promise<void>;
+	},
 	hint?: string,
 ) {
 	await showCursorAt(page, locator, hint);
@@ -61,11 +69,22 @@ async function cursorClick(
  */
 async function getElementCenter(
 	page: Page,
-	locator: { boundingBox: () => Promise<{ x: number; y: number; width: number; height: number } | null> },
+	locator: {
+		boundingBox: () => Promise<{
+			x: number;
+			y: number;
+			width: number;
+			height: number;
+		} | null>;
+	},
 	hint?: string,
 ): Promise<{ x: number; y: number } | null> {
 	const box = await locator.boundingBox().catch(() => null);
-	if (box) return { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };
+	if (box)
+		return {
+			x: Math.round(box.x + box.width / 2),
+			y: Math.round(box.y + box.height / 2),
+		};
 
 	// boundingBox() returns null for elements inside cross-origin iframes.
 	// Use Playwright's frame API to evaluate inside the frame, then combine with iframe position.
@@ -76,45 +95,57 @@ async function getElementCenter(
 		return { x: r.x, y: r.y };
 	});
 	if (iframeRect && hint) {
-		const frame = page.frames().find((f) => f !== page.mainFrame() && f.url() !== "about:blank");
+		const frame = page
+			.frames()
+			.find((f) => f !== page.mainFrame() && f.url() !== "about:blank");
 		if (frame) {
-			const elRect = await frame.evaluate((textHint) => {
-				// Strategy 1: Find the visible <button> inside a shadow root whose host has matching text.
-				// Polaris <s-button> has shadowRoot with a <button>, and textContent on the host has the slot text.
-				for (const el of document.querySelectorAll("s-button")) {
-					if (el.textContent?.trim() === textHint) {
-						const btn = el.shadowRoot?.querySelector("button") ?? el;
-						const r = btn.getBoundingClientRect();
-						if (r.width > 0 && r.height > 0) {
-							return { x: r.x, y: r.y, width: r.width, height: r.height };
-						}
-					}
-				}
-				// Strategy 2: TreeWalker fallback — find text node, walk up to smallest visible ancestor.
-				const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-				let node: Node | null;
-				let best: { x: number; y: number; width: number; height: number } | null = null;
-				let bestArea = Number.POSITIVE_INFINITY;
-				while ((node = walker.nextNode())) {
-					const text = node.textContent?.trim();
-					if (text === textHint || text?.includes(textHint)) {
-						let el: HTMLElement | null = node.parentElement;
-						while (el) {
-							const r = el.getBoundingClientRect();
+			const elRect = await frame
+				.evaluate((textHint) => {
+					// Strategy 1: Find the visible <button> inside a shadow root whose host has matching text.
+					// Polaris <s-button> has shadowRoot with a <button>, and textContent on the host has the slot text.
+					for (const el of document.querySelectorAll("s-button")) {
+						if (el.textContent?.trim() === textHint) {
+							const btn = el.shadowRoot?.querySelector("button") ?? el;
+							const r = btn.getBoundingClientRect();
 							if (r.width > 0 && r.height > 0) {
-								const area = r.width * r.height;
-								if (area < bestArea) {
-									best = { x: r.x, y: r.y, width: r.width, height: r.height };
-									bestArea = area;
-								}
-								break;
+								return { x: r.x, y: r.y, width: r.width, height: r.height };
 							}
-							el = el.parentElement;
 						}
 					}
-				}
-				return best;
-			}, hint).catch(() => null);
+					// Strategy 2: TreeWalker fallback — find text node, walk up to smallest visible ancestor.
+					const walker = document.createTreeWalker(
+						document.body,
+						NodeFilter.SHOW_TEXT,
+					);
+					let node: Node | null;
+					let best: {
+						x: number;
+						y: number;
+						width: number;
+						height: number;
+					} | null = null;
+					let bestArea = Number.POSITIVE_INFINITY;
+					while ((node = walker.nextNode())) {
+						const text = node.textContent?.trim();
+						if (text === textHint || text?.includes(textHint)) {
+							let el: HTMLElement | null = node.parentElement;
+							while (el) {
+								const r = el.getBoundingClientRect();
+								if (r.width > 0 && r.height > 0) {
+									const area = r.width * r.height;
+									if (area < bestArea) {
+										best = { x: r.x, y: r.y, width: r.width, height: r.height };
+										bestArea = area;
+									}
+									break;
+								}
+								el = el.parentElement;
+							}
+						}
+					}
+					return best;
+				}, hint)
+				.catch(() => null);
 			if (elRect) {
 				return {
 					x: Math.round(iframeRect.x + elRect.x + elRect.width / 2),
@@ -131,7 +162,14 @@ async function getElementCenter(
 /** Show cursor dot at the center of an element (no click). */
 async function showCursorAt(
 	page: Page,
-	locator: { boundingBox: () => Promise<{ x: number; y: number; width: number; height: number } | null> },
+	locator: {
+		boundingBox: () => Promise<{
+			x: number;
+			y: number;
+			width: number;
+			height: number;
+		} | null>;
+	},
 	hint?: string,
 ) {
 	const center = await getElementCenter(page, locator, hint);
@@ -158,11 +196,17 @@ async function showCursorAt(
 		({ x, y }) => {
 			const ripple = document.createElement("div");
 			Object.assign(ripple.style, {
-				position: "fixed", zIndex: "2147483646", pointerEvents: "none",
-				width: "40px", height: "40px", borderRadius: "50%",
+				position: "fixed",
+				zIndex: "2147483646",
+				pointerEvents: "none",
+				width: "40px",
+				height: "40px",
+				borderRadius: "50%",
 				border: "3px solid rgba(230, 81, 0, 0.8)",
-				left: `${x}px`, top: `${y}px`,
-				transform: "translate(-50%, -50%) scale(0.5)", opacity: "1",
+				left: `${x}px`,
+				top: `${y}px`,
+				transform: "translate(-50%, -50%) scale(0.5)",
+				opacity: "1",
 				transition: "transform 0.3s ease-out, opacity 0.3s ease-out",
 			});
 			document.body.appendChild(ripple);
@@ -218,7 +262,9 @@ async function phase2Onboarding(ctx: ScreencastContext) {
 	await waitForPolaris(page);
 
 	// Wait for onboarding to render (look for "Start Free" button)
-	const startFreeBtn = frame.locator("button").filter({ hasText: "Start Free" });
+	const startFreeBtn = frame
+		.locator("button")
+		.filter({ hasText: "Start Free" });
 	await startFreeBtn.waitFor({ state: "visible", timeout: 60_000 });
 	log(ctx, "onboarding", "Plan selection visible");
 	await pause(ctx, 4000); // Voiceover: explain plan options
@@ -263,11 +309,23 @@ async function phase3Dashboard(ctx: ScreencastContext) {
 
 	// Wait for the setup wizard to load — could be on any step (draft restored)
 	await Promise.race([
-		frame.locator("#pi-website-url").waitFor({ state: "visible", timeout: 30_000 }),
-		frame.locator("#pi-business-name").waitFor({ state: "visible", timeout: 30_000 }),
-		frame.locator("#pi-assistant-name").waitFor({ state: "visible", timeout: 30_000 }),
-		frame.getByText("Suggested Actions").first().waitFor({ state: "visible", timeout: 30_000 }),
-		frame.getByText("Review Your Setup").first().waitFor({ state: "visible", timeout: 30_000 }),
+		frame
+			.locator("#pi-website-url")
+			.waitFor({ state: "visible", timeout: 30_000 }),
+		frame
+			.locator("#pi-business-name")
+			.waitFor({ state: "visible", timeout: 30_000 }),
+		frame
+			.locator("#pi-assistant-name")
+			.waitFor({ state: "visible", timeout: 30_000 }),
+		frame
+			.getByText("Suggested Actions")
+			.first()
+			.waitFor({ state: "visible", timeout: 30_000 }),
+		frame
+			.getByText("Review Your Setup")
+			.first()
+			.waitFor({ state: "visible", timeout: 30_000 }),
 	]);
 	await page.waitForTimeout(2000);
 	log(ctx, "wizard", "Setup wizard loaded");
@@ -289,14 +347,42 @@ async function phase4Wizard(ctx: ScreencastContext) {
 	// Check for ANY wizard step content — the wizard may have restored a draft
 	// on a later step from a previous run.
 	const wizardChecks = await Promise.all([
-		frame.locator("#pi-website-url").isVisible().catch(() => false),
-		frame.locator("#pi-business-name").isVisible().catch(() => false),
-		frame.locator("#pi-assistant-name").isVisible().catch(() => false),
-		frame.locator("#pta-tagline-specialty").isVisible().catch(() => false),
-		frame.getByText("Suggested Actions").first().isVisible().catch(() => false),
-		frame.getByText("Review Your Setup").first().isVisible().catch(() => false),
-		frame.locator("s-button[variant='primary']").filter({ hasText: "Next" }).isVisible().catch(() => false),
-		frame.locator("s-button[variant='primary']").filter({ hasText: "Generate" }).isVisible().catch(() => false),
+		frame
+			.locator("#pi-website-url")
+			.isVisible()
+			.catch(() => false),
+		frame
+			.locator("#pi-business-name")
+			.isVisible()
+			.catch(() => false),
+		frame
+			.locator("#pi-assistant-name")
+			.isVisible()
+			.catch(() => false),
+		frame
+			.locator("#pta-tagline-specialty")
+			.isVisible()
+			.catch(() => false),
+		frame
+			.getByText("Suggested Actions")
+			.first()
+			.isVisible()
+			.catch(() => false),
+		frame
+			.getByText("Review Your Setup")
+			.first()
+			.isVisible()
+			.catch(() => false),
+		frame
+			.locator("s-button[variant='primary']")
+			.filter({ hasText: "Next" })
+			.isVisible()
+			.catch(() => false),
+		frame
+			.locator("s-button[variant='primary']")
+			.filter({ hasText: "Generate" })
+			.isVisible()
+			.catch(() => false),
 	]);
 	const alreadyOnWizard = wizardChecks.some(Boolean);
 	if (!alreadyOnWizard) {
@@ -343,7 +429,11 @@ async function phase4Wizard(ctx: ScreencastContext) {
 		const step = steps[i];
 		const field = frame.locator(step.id);
 		if (await field.isVisible().catch(() => false)) {
-			log(ctx, "wizard-step", `Step ${i + 1}: ${step.name} (auto-filled by AI)`);
+			log(
+				ctx,
+				"wizard-step",
+				`Step ${i + 1}: ${step.name} (auto-filled by AI)`,
+			);
 			await pause(ctx, 3000); // Voiceover window
 			await clickNext(page, frame);
 			log(ctx, "click", "Next");
@@ -414,12 +504,18 @@ async function waitForPolaris(page: Page) {
 	const frame = appFrame(page);
 	console.log("  Waiting for Polaris to load...");
 	try {
-		await frame.locator("s-section").first().waitFor({ state: "visible", timeout: 30_000 });
+		await frame
+			.locator("s-section")
+			.first()
+			.waitFor({ state: "visible", timeout: 30_000 });
 	} catch {
 		// Polaris CDN may have failed — reload and retry
 		console.log("  Polaris not loaded — refreshing page...");
 		await page.reload({ waitUntil: "domcontentloaded", timeout: 30_000 });
-		await frame.locator("s-section").first().waitFor({ state: "visible", timeout: 30_000 });
+		await frame
+			.locator("s-section")
+			.first()
+			.waitFor({ state: "visible", timeout: 30_000 });
 	}
 	console.log("  Polaris loaded.");
 }
@@ -430,10 +526,22 @@ async function waitForDashboard(page: Page, timeout = 30_000) {
 	// The dashboard renders two layouts (compact + prominent) — one is display:none.
 	// Which one is visible depends on widgetActive state. Race both, plus a broader fallback.
 	await Promise.race([
-		frame.locator('a[href*="/setup-wizard"]').first().waitFor({ state: "visible", timeout }),
-		frame.locator('a[href*="/setup-wizard"]').last().waitFor({ state: "visible", timeout }),
-		frame.locator('a[href*="/widget-setup"]').first().waitFor({ state: "visible", timeout }),
-		frame.locator('a[href*="/widget-setup"]').last().waitFor({ state: "visible", timeout }),
+		frame
+			.locator('a[href*="/setup-wizard"]')
+			.first()
+			.waitFor({ state: "visible", timeout }),
+		frame
+			.locator('a[href*="/setup-wizard"]')
+			.last()
+			.waitFor({ state: "visible", timeout }),
+		frame
+			.locator('a[href*="/widget-setup"]')
+			.first()
+			.waitFor({ state: "visible", timeout }),
+		frame
+			.locator('a[href*="/widget-setup"]')
+			.last()
+			.waitFor({ state: "visible", timeout }),
 	]);
 }
 
@@ -450,13 +558,19 @@ async function clickDashboardLink(page: Page, hrefPattern: string) {
 	if (await first.isVisible().catch(() => false)) {
 		await cursorClick(page, first, hint);
 	} else {
-		await cursorClick(page, frame.locator(`a[href*="${hrefPattern}"]`).last(), hint);
+		await cursorClick(
+			page,
+			frame.locator(`a[href*="${hrefPattern}"]`).last(),
+			hint,
+		);
 	}
 }
 
 /** Click the Next button in the wizard */
 async function clickNext(page: Page, frame: FrameLocator) {
-	const nextBtn = frame.locator("s-button[variant='primary']").filter({ hasText: "Next" });
+	const nextBtn = frame
+		.locator("s-button[variant='primary']")
+		.filter({ hasText: "Next" });
 	await nextBtn.waitFor({ state: "visible", timeout: 10_000 });
 	await cursorClick(page, nextBtn, "Next");
 }
@@ -478,7 +592,10 @@ async function phase5Widget(ctx: ScreencastContext) {
 	await clickDashboardLink(page, "/widget-setup");
 
 	// Wait for widget setup page to load — look for any text/element unique to the page
-	await frame.getByText("Open Theme Editor").first().waitFor({ state: "visible", timeout: 15_000 });
+	await frame
+		.getByText("Open Theme Editor")
+		.first()
+		.waitFor({ state: "visible", timeout: 15_000 });
 	log(ctx, "widget-setup", "Widget setup page loaded");
 	await pause(ctx, 3000); // Voiceover: explain widget activation steps
 
@@ -501,7 +618,10 @@ async function phase5Widget(ctx: ScreencastContext) {
 	await showCursorAt(page, openBtn, "Open Theme Editor");
 	await hideCursor(page);
 	log(ctx, "click", "Open Theme Editor");
-	await page.goto(editorUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
+	await page.goto(editorUrl, {
+		waitUntil: "domcontentloaded",
+		timeout: 60_000,
+	});
 
 	// Don't wait for networkidle — the theme editor SPA constantly fetches resources.
 	log(ctx, "theme-editor", "Theme editor opened");
@@ -527,17 +647,23 @@ async function phase5Widget(ctx: ScreencastContext) {
 		console.log(`  Theme editor has ${page.frames().length} frames`);
 
 		// Find the editor sidebar frame
-		let editorFrame = page
-			.frames()
-			.find((f) => f.url().includes("online-store-web.shopifyapps.com/themes/")) || null;
+		let editorFrame =
+			page
+				.frames()
+				.find((f) =>
+					f.url().includes("online-store-web.shopifyapps.com/themes/"),
+				) || null;
 
 		// If not matched by URL yet, wait a bit more for frames to navigate
 		if (!editorFrame) {
 			const urlDeadline = Date.now() + 15_000;
 			while (Date.now() < urlDeadline) {
-				editorFrame = page
-					.frames()
-					.find((f) => f.url().includes("online-store-web.shopifyapps.com/themes/")) || null;
+				editorFrame =
+					page
+						.frames()
+						.find((f) =>
+							f.url().includes("online-store-web.shopifyapps.com/themes/"),
+						) || null;
 				if (editorFrame) break;
 				await page.waitForTimeout(1000);
 			}
@@ -568,7 +694,9 @@ async function phase5Widget(ctx: ScreencastContext) {
 				await pause(ctx, 2000);
 
 				// Click Save — only after toggling (button is disabled when no changes)
-				const saveBtn = editorFrame.getByRole("button", { name: /save/i }).first();
+				const saveBtn = editorFrame
+					.getByRole("button", { name: /save/i })
+					.first();
 				if (await saveBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
 					await saveBtn.click();
 					log(ctx, "click", "Saved theme changes");
@@ -582,7 +710,10 @@ async function phase5Widget(ctx: ScreencastContext) {
 		} else {
 			console.log("  Could not find editor sidebar frame");
 			console.log(
-				`  Available frames: ${page.frames().map((f) => f.url().slice(0, 100)).join("\n    ")}`,
+				`  Available frames: ${page
+					.frames()
+					.map((f) => f.url().slice(0, 100))
+					.join("\n    ")}`,
 			);
 			await pause(ctx, 3000);
 		}
@@ -598,8 +729,14 @@ async function phase5Widget(ctx: ScreencastContext) {
 	// after same-tab goto to the theme editor)
 	log(ctx, "close-tab", "Theme editor closed");
 	// Go directly to widget setup (not dashboard) since we need to check the confirm checkbox
-	const widgetSetupUrl = APP_URL.replace(/\/shopify-admin$/, "/shopify-admin/widget-setup");
-	await page.goto(widgetSetupUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
+	const widgetSetupUrl = APP_URL.replace(
+		/\/shopify-admin$/,
+		"/shopify-admin/widget-setup",
+	);
+	await page.goto(widgetSetupUrl, {
+		waitUntil: "domcontentloaded",
+		timeout: 60_000,
+	});
 	await page.waitForTimeout(3000);
 	await waitForPolaris(page);
 
@@ -633,7 +770,10 @@ async function phase5Widget(ctx: ScreencastContext) {
 		.isVisible()
 		.catch(() => false);
 	if (!onDashboard) {
-		await page.goto(APP_URL, { waitUntil: "domcontentloaded", timeout: 30_000 });
+		await page.goto(APP_URL, {
+			waitUntil: "domcontentloaded",
+			timeout: 30_000,
+		});
 		await page.waitForTimeout(2000);
 		await waitForPolaris(page);
 	}
@@ -656,9 +796,18 @@ async function phase6Complete(ctx: ScreencastContext) {
 // ── Main ────────────────────────────────────────────────────────────
 
 async function main() {
-	console.log(`── Screencast 1: Installation Experience (from=${startFrom}) ──\n`);
+	console.log(
+		`── Screencast 1: Installation Experience (from=${startFrom}) ──\n`,
+	);
 
-	const phases = ["install", "onboarding", "dashboard", "wizard", "widget", "complete"];
+	const phases = [
+		"install",
+		"onboarding",
+		"dashboard",
+		"wizard",
+		"widget",
+		"complete",
+	];
 	const startIdx = phases.indexOf(startFrom);
 	if (startIdx === -1) {
 		console.error(`Unknown --from value: ${startFrom}`);

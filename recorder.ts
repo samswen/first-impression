@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { chromium, type Page } from "playwright";
+import { type BrowserContext, chromium, type Page } from "playwright";
 import { getPlaywrightProxy } from "./proxy";
 
 const execP = promisify(execFile);
@@ -16,8 +16,20 @@ import {
 	waitForResponseDone,
 	zoomToElement,
 } from "./helpers";
+import { solveTurnstile } from "./turnstile-solver";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** Real Chrome user agent — avoids "HeadlessChrome" which triggers Cloudflare. */
+const CHROME_USER_AGENT =
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+/** Hide navigator.webdriver from bot detection (Playwright sets it to true). */
+async function applyStealthToContext(context: BrowserContext): Promise<void> {
+	await context.addInitScript(() => {
+		Object.defineProperty(navigator, "webdriver", { get: () => false });
+	});
+}
 
 export interface RecordingConfig {
 	url: string;
@@ -98,8 +110,28 @@ async function loadPageForSnapshot(
 		route.abort();
 	});
 
-	await page.goto(url, { waitUntil: "load", timeout: 60_000 });
+	const navResponse = await page.goto(url, {
+		waitUntil: "load",
+		timeout: 60_000,
+	});
 	await page.waitForTimeout(3000);
+
+	// Check for Cloudflare challenge via response header
+	const cfMitigated = navResponse?.headers()["cf-mitigated"];
+	if (cfMitigated === "challenge") {
+		emit("progress", "Cloudflare challenge detected, attempting to solve...");
+		const result = await solveTurnstile(page);
+		if (result.solved) {
+			emit("progress", "Cloudflare challenge solved, waiting for real page...");
+			try {
+				await page.waitForLoadState("networkidle", { timeout: 10_000 });
+			} catch {
+				// Some sites never reach networkidle
+			}
+		} else {
+			emit("progress", `Cloudflare challenge not solved: ${result.error}`);
+		}
+	}
 
 	// Extract first frame from each blocked video URL
 	const frameMap: Record<string, string> = {};
@@ -203,14 +235,19 @@ export class Recorder {
 			emit("progress", `Taking snapshot of ${this.config.url}...`);
 
 			// Use a separate browser for the snapshot (no recording)
-			const snapBrowser = await chromium.launch({ headless: true, proxy: getPlaywrightProxy() });
+			const snapBrowser = await chromium.launch({
+				headless: true,
+				proxy: await getPlaywrightProxy(),
+			});
 			let snapshotOk = false;
 
 			try {
 				const snapContext = await snapBrowser.newContext({
 					viewport: { width: 1920, height: 1080 },
 					ignoreHTTPSErrors: true,
+					userAgent: CHROME_USER_AGENT,
 				});
+				await applyStealthToContext(snapContext);
 				const snapPage = await snapContext.newPage();
 				await loadPageForSnapshot(snapPage, this.config.url, emit);
 
@@ -225,7 +262,9 @@ export class Recorder {
 				const mobileContext = await snapBrowser.newContext({
 					viewport: { width: 390, height: 844 },
 					ignoreHTTPSErrors: true,
+					userAgent: CHROME_USER_AGENT,
 				});
+				await applyStealthToContext(mobileContext);
 				const mobilePage = await mobileContext.newPage();
 				await loadPageForSnapshot(mobilePage, this.config.url, emit);
 
@@ -293,7 +332,7 @@ body { ${bgStyle} }
 		emit("progress", "Launching recording browser...");
 		const browser = await chromium.launch({
 			headless: !this.config.headed,
-			proxy: getPlaywrightProxy(),
+			proxy: await getPlaywrightProxy(),
 		});
 		const context = await browser.newContext({
 			viewport: { width: 1920, height: 1080 },
@@ -302,17 +341,46 @@ body { ${bgStyle} }
 				size: { width: 1920, height: 1080 },
 			},
 			ignoreHTTPSErrors: true,
+			userAgent: CHROME_USER_AGENT,
 		});
+		await applyStealthToContext(context);
 
 		const page = await context.newPage();
 
 		try {
 			// --- Page load ---
 			emit("action-start", `Loading ${this.config.url}`, "page-load");
-			await page.goto(navigateUrl, {
+			const recNavResponse = await page.goto(navigateUrl, {
 				waitUntil: "domcontentloaded",
 				timeout: 60_000,
 			});
+
+			// Check for Cloudflare challenge via response header
+			if (!navigateUrl.startsWith("file://")) {
+				const recCfMitigated = recNavResponse?.headers()["cf-mitigated"];
+				if (recCfMitigated === "challenge") {
+					emit("progress", "Cloudflare challenge detected, solving...");
+					const cfResult = await solveTurnstile(page);
+					if (cfResult.solved) {
+						emit(
+							"progress",
+							"Cloudflare challenge solved, waiting for real page...",
+						);
+						try {
+							await page.waitForLoadState("networkidle", {
+								timeout: 10_000,
+							});
+						} catch {
+							// Some sites never reach networkidle
+						}
+					} else {
+						emit(
+							"progress",
+							`Warning: Cloudflare challenge not solved: ${cfResult.error}`,
+						);
+					}
+				}
+			}
 
 			const widget = page.locator("#xinfer-chat-widget");
 			await widget.waitFor({ state: "attached", timeout: 30_000 });

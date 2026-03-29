@@ -7,7 +7,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { chromium, type BrowserContext, type Page } from "playwright";
+import { type BrowserContext, chromium, type Page } from "playwright";
 
 export interface TimelineEvent {
 	action: string;
@@ -58,7 +58,9 @@ export async function startRecording(
 		await context.addCookies(cookies);
 		console.log(`Injected ${cookies.length} cookies`);
 	} else {
-		console.log("Warning: no cookies.json found — you may need to log in manually");
+		console.log(
+			"Warning: no cookies.json found — you may need to log in manually",
+		);
 	}
 
 	const page = await context.newPage();
@@ -122,7 +124,6 @@ export async function pause(ctx: ScreencastContext, ms = 2000) {
 	await ctx.page.waitForTimeout(ms);
 }
 
-
 const SIGNAL_FILE = path.join(SCREENCAST_DIR, ".signal");
 
 /**
@@ -169,7 +170,9 @@ export async function finishRecording(
 	try {
 		const remaining = fs.readdirSync(ctx.dir);
 		if (remaining.length === 0) fs.rmdirSync(ctx.dir);
-	} catch { /* ignore */ }
+	} catch {
+		/* ignore */
+	}
 
 	// Save timeline
 	const timelinePath = path.join(SCREENCAST_DIR, `${outputName}-timeline.json`);

@@ -6,7 +6,6 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import type { Browser } from "playwright";
 import { chromium } from "playwright";
-import { getPlaywrightProxy } from "./proxy";
 import {
 	clearSessionCookie,
 	createSessionToken,
@@ -32,13 +31,19 @@ import {
 	startRecording,
 	trimRecording,
 } from "./pipeline";
+import { getPlaywrightProxy } from "./proxy";
 import type { ProgressEvent } from "./recorder";
 import { fetchTenantInfo } from "./tenant";
+import { solveTurnstile } from "./turnstile-solver";
 import { deleteTTSCache } from "./voice";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RECORDINGS_DIR = path.join(__dirname, "recordings");
 const PORT = 3456;
+
+/** Real Chrome user agent — avoids "HeadlessChrome" which triggers Cloudflare. */
+const CHROME_USER_AGENT =
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 const app = express();
 
@@ -1000,14 +1005,51 @@ app.post("/api/simulate", async (req, res) => {
 
 	let browser: Browser | null = null;
 	try {
-		browser = await chromium.launch({ headless: true, proxy: getPlaywrightProxy() });
+		browser = await chromium.launch({
+			headless: true,
+			proxy: await getPlaywrightProxy(),
+		});
 		const context = await browser.newContext({
 			viewport: { width: 1920, height: 1080 },
 			ignoreHTTPSErrors: true,
+			userAgent: CHROME_USER_AGENT,
+		});
+		await context.addInitScript(() => {
+			Object.defineProperty(navigator, "webdriver", { get: () => false });
 		});
 		const page = await context.newPage();
-		await page.goto(url, { waitUntil: "load", timeout: 60_000 });
-		await page.waitForTimeout(3000);
+		const navResponse = await page.goto(url, {
+			waitUntil: "domcontentloaded",
+			timeout: 30_000,
+		});
+		try {
+			await page.waitForLoadState("networkidle", { timeout: 10_000 });
+		} catch {
+			// Some sites never reach networkidle — continue with what we have
+		}
+
+		// Handle Cloudflare challenge if detected
+		const cfMitigated = navResponse?.headers()["cf-mitigated"];
+		if (cfMitigated === "challenge") {
+			console.log(`[Simulate] Cloudflare challenge for ${url}, solving...`);
+			const result = await solveTurnstile(page);
+			if (result.solved) {
+				console.log(
+					"[Simulate] Challenge solved, waiting for site to load...",
+				);
+				try {
+					await page.waitForLoadState("networkidle", { timeout: 10_000 });
+				} catch {
+					// Some sites never reach networkidle
+				}
+			} else {
+				console.log(`[Simulate] Challenge not solved: ${result.error}`);
+				const debugScreenshot = await page.screenshot({ type: "png" });
+				const debugPath = path.join(__dirname, "debug-challenge.png");
+				fs.writeFileSync(debugPath, debugScreenshot);
+				console.log(`[Simulate] Debug screenshot saved to ${debugPath}`);
+			}
+		}
 
 		const screenshot = await page.screenshot({ type: "png" });
 		const screenshotBase64 = screenshot.toString("base64");

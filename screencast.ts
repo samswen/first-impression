@@ -46,42 +46,64 @@ interface Clip {
  */
 const NARRATION_MAP: Record<string, string> = {
 	// Segment 1: Install
-	"start": "Let's install XInfer AI from the Shopify App Store.",
-	"install-approved": "The app requests access to products, themes, and orders to power the AI agent.",
-	"onboarding-visible": "After install, we land on the onboarding screen. Let's pick a plan.",
+	start: "Let's install XInfer AI from the Shopify App Store.",
+	"install-approved":
+		"The app requests access to products, themes, and orders to power the AI agent.",
+	"onboarding-visible":
+		"After install, we land on the onboarding screen. Let's pick a plan.",
 	"plan-selected": "We'll go with the Starter plan for this demo.",
 	"setup-wizard-open": "Now we open the AI Agent Setup Wizard.",
-	"wizard-url": "Enter your store URL so the AI can crawl your website and product catalog.",
-	"wizard-business-type": "Select your business type for domain-specific intelligence.",
+	"wizard-url":
+		"Enter your store URL so the AI can crawl your website and product catalog.",
+	"wizard-business-type":
+		"Select your business type for domain-specific intelligence.",
 	"wizard-contact": "Add your business contact info and hours.",
 	"wizard-personality": "Choose a voice and personality for your AI agent.",
-	"wizard-complete": "The wizard is complete. The AI is now training on your content.",
+	"wizard-complete":
+		"The wizard is complete. The AI is now training on your content.",
 
 	// Segment 2: Admin
-	"dashboard": "Here's the embedded admin dashboard inside Shopify, showing setup progress and usage metrics.",
-	"view-settings": "The Settings page lets you customize the AI agent's name, personality, and behavior.",
-	"view-products": "Products sync automatically from your Shopify catalog via webhooks.",
+	dashboard:
+		"Here's the embedded admin dashboard inside Shopify, showing setup progress and usage metrics.",
+	"view-settings":
+		"The Settings page lets you customize the AI agent's name, personality, and behavior.",
+	"view-products":
+		"Products sync automatically from your Shopify catalog via webhooks.",
 	"view-billing": "The Billing page shows your current plan and usage details.",
-	"view-ai-faqs": "Add custom FAQs to train the AI on your most common questions.",
-	"view-ai-documents": "Upload documents like size guides or return policies to expand the AI's knowledge.",
-	"view-follow-ups": "Follow-ups show customer requests that need human attention.",
-	"view-shopping-carts": "Shopping carts track items customers add through the AI chat.",
-	"view-draft-orders": "Draft orders track purchases completed through the chat widget.",
-	"view-phone-setup": "Set up a phone number so customers can call or text your AI agent.",
-	"view-widget-setup": "Activate the chat widget from your Shopify theme editor.",
+	"view-ai-faqs":
+		"Add custom FAQs to train the AI on your most common questions.",
+	"view-ai-documents":
+		"Upload documents like size guides or return policies to expand the AI's knowledge.",
+	"view-follow-ups":
+		"Follow-ups show customer requests that need human attention.",
+	"view-shopping-carts":
+		"Shopping carts track items customers add through the AI chat.",
+	"view-draft-orders":
+		"Draft orders track purchases completed through the chat widget.",
+	"view-phone-setup":
+		"Set up a phone number so customers can call or text your AI agent.",
+	"view-widget-setup":
+		"Activate the chat widget from your Shopify theme editor.",
 
 	// Segment 3: Customer
 	"page-load": "Now let's see the customer experience on the storefront.",
-	"open-widget": "The chat widget appears in the corner. Let's click to open it.",
+	"open-widget":
+		"The chat widget appears in the corner. Let's click to open it.",
 	"query-start-1": "We'll ask for product recommendations.",
-	"query-done-1": "The AI searches the catalog and shows relevant products with images and prices.",
+	"query-done-1":
+		"The AI searches the catalog and shows relevant products with images and prices.",
 	"query-start-2": "Let's narrow it down with a budget constraint.",
-	"query-done-2": "The AI respects the price limit precisely and updates its recommendations.",
-	"query-start-3": "Customers can add items to their cart right from the conversation.",
+	"query-done-2":
+		"The AI respects the price limit precisely and updates its recommendations.",
+	"query-start-3":
+		"Customers can add items to their cart right from the conversation.",
 	"query-start-4": "Let's check on an order status.",
-	"query-done-4": "The AI looks up the order and returns real-time tracking information.",
-	"voice-start": "Now let's try voice chat. Click the microphone and speak your question.",
-	"voice-done": "The AI responds with voice, creating a hands-free shopping experience.",
+	"query-done-4":
+		"The AI looks up the order and returns real-time tracking information.",
+	"voice-start":
+		"Now let's try voice chat. Click the microphone and speak your question.",
+	"voice-done":
+		"The AI responds with voice, creating a hands-free shopping experience.",
 };
 
 const SEGMENTS = [
@@ -94,9 +116,12 @@ const SEGMENTS = [
 
 async function getMediaDuration(filePath: string): Promise<number> {
 	const { stdout } = await execP("ffprobe", [
-		"-v", "error",
-		"-show_entries", "format=duration",
-		"-of", "csv=p=0",
+		"-v",
+		"error",
+		"-show_entries",
+		"format=duration",
+		"-of",
+		"csv=p=0",
 		filePath,
 	]);
 	return Number.parseFloat(stdout.trim());
@@ -137,10 +162,16 @@ async function addVoiceoverToSegment(
 	const segDir = path.join(VOICEOVER_DIR, `seg-${segIndex}`);
 	fs.mkdirSync(segDir, { recursive: true });
 
-	console.log(`\n── Segment ${segIndex + 1}: ${videoFile} (${clips.length} clips) ──`);
+	console.log(
+		`\n── Segment ${segIndex + 1}: ${videoFile} (${clips.length} clips) ──`,
+	);
 
 	// Generate TTS clips
-	const generated: Array<{ audioPath: string; startTime: number; duration: number }> = [];
+	const generated: Array<{
+		audioPath: string;
+		startTime: number;
+		duration: number;
+	}> = [];
 
 	for (let i = 0; i < clips.length; i++) {
 		const clip = clips[i];
@@ -152,7 +183,9 @@ async function addVoiceoverToSegment(
 
 	// Get video duration, extend if needed
 	const videoDuration = await getMediaDuration(videoPath);
-	const audioEndTime = Math.max(...generated.map((c) => c.startTime + c.duration));
+	const audioEndTime = Math.max(
+		...generated.map((c) => c.startTime + c.duration),
+	);
 	const totalDuration = Math.max(videoDuration, audioEndTime + 0.5);
 	const needsExtend = audioEndTime > videoDuration;
 
@@ -166,15 +199,50 @@ async function addVoiceoverToSegment(
 		const freezeClip = path.join(segDir, "freeze.webm");
 		const extended = path.join(segDir, "extended.webm");
 
-		await execP("ffmpeg", ["-sseof", "-0.1", "-i", videoPath, "-frames:v", "1", "-y", lastFrame]);
 		await execP("ffmpeg", [
-			"-loop", "1", "-i", lastFrame, "-t", String(extendBy),
-			"-c:v", "libvpx-vp9", "-b:v", "500K", "-pix_fmt", "yuv420p", "-r", "30", "-an", "-y", freezeClip,
+			"-sseof",
+			"-0.1",
+			"-i",
+			videoPath,
+			"-frames:v",
+			"1",
+			"-y",
+			lastFrame,
+		]);
+		await execP("ffmpeg", [
+			"-loop",
+			"1",
+			"-i",
+			lastFrame,
+			"-t",
+			String(extendBy),
+			"-c:v",
+			"libvpx-vp9",
+			"-b:v",
+			"500K",
+			"-pix_fmt",
+			"yuv420p",
+			"-r",
+			"30",
+			"-an",
+			"-y",
+			freezeClip,
 		]);
 
 		const concatList = path.join(segDir, "concat.txt");
 		fs.writeFileSync(concatList, `file '${videoPath}'\nfile '${freezeClip}'\n`);
-		await execP("ffmpeg", ["-f", "concat", "-safe", "0", "-i", concatList, "-c", "copy", "-y", extended]);
+		await execP("ffmpeg", [
+			"-f",
+			"concat",
+			"-safe",
+			"0",
+			"-i",
+			concatList,
+			"-c",
+			"copy",
+			"-y",
+			extended,
+		]);
 		inputVideoPath = extended;
 	}
 
@@ -197,11 +265,20 @@ async function addVoiceoverToSegment(
 	);
 
 	args.push(
-		"-filter_complex", filterParts.join(";"),
-		"-map", "0:v", "-map", "[aout]",
-		"-c:v", "copy", "-c:a", "libopus",
-		"-t", String(totalDuration),
-		"-y", outputPath,
+		"-filter_complex",
+		filterParts.join(";"),
+		"-map",
+		"0:v",
+		"-map",
+		"[aout]",
+		"-c:v",
+		"copy",
+		"-c:a",
+		"libopus",
+		"-t",
+		String(totalDuration),
+		"-y",
+		outputPath,
 	);
 
 	console.log("  Mixing audio...");
@@ -224,12 +301,16 @@ async function main() {
 		const timelinePath = path.join(DIR, seg.timeline);
 
 		if (!fs.existsSync(timelinePath)) {
-			console.log(`Warning: ${seg.timeline} not found, skipping voiceover for ${seg.video}`);
+			console.log(
+				`Warning: ${seg.timeline} not found, skipping voiceover for ${seg.video}`,
+			);
 			voicedPaths.push(path.join(DIR, seg.video));
 			continue;
 		}
 
-		const timeline: TimelineEvent[] = JSON.parse(fs.readFileSync(timelinePath, "utf-8"));
+		const timeline: TimelineEvent[] = JSON.parse(
+			fs.readFileSync(timelinePath, "utf-8"),
+		);
 		const clips = buildClipsFromTimeline(timeline);
 		const outputPath = await addVoiceoverToSegment(seg.video, clips, i);
 		voicedPaths.push(outputPath);
@@ -245,16 +326,24 @@ async function main() {
 
 	const finalPath = path.join(DIR, "final.webm");
 	await execP("ffmpeg", [
-		"-f", "concat", "-safe", "0",
-		"-i", concatList,
-		"-c", "copy",
-		"-y", finalPath,
+		"-f",
+		"concat",
+		"-safe",
+		"0",
+		"-i",
+		concatList,
+		"-c",
+		"copy",
+		"-y",
+		finalPath,
 	]);
 
 	const duration = await getMediaDuration(finalPath);
 	const size = fs.statSync(finalPath).size / 1024 / 1024;
 	console.log(`\nDone! ${finalPath}`);
-	console.log(`Duration: ${Math.round(duration)}s (${(duration / 60).toFixed(1)} min)`);
+	console.log(
+		`Duration: ${Math.round(duration)}s (${(duration / 60).toFixed(1)} min)`,
+	);
 	console.log(`Size: ${size.toFixed(1)}MB`);
 }
 

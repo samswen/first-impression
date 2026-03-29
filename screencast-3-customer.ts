@@ -8,16 +8,16 @@
  */
 
 import {
+	PAUSE_AFTER_RESPONSE,
+	scrollThroughResponse,
+	sendMessage,
+} from "./helpers";
+import {
 	finishRecording,
 	log,
 	pause,
 	startRecording,
 } from "./screencast-helpers";
-import {
-	PAUSE_AFTER_RESPONSE,
-	sendMessage,
-	scrollThroughResponse,
-} from "./helpers";
 
 const STORE_URL = "https://demo-store.xinfer.ai";
 

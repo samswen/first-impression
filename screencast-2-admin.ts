@@ -24,8 +24,8 @@ import {
 	finishRecording,
 	log,
 	pause,
-	startRecording,
 	type ScreencastContext,
+	startRecording,
 } from "./screencast-helpers";
 
 const SHOP = "xinferdotai-demo";
@@ -34,14 +34,54 @@ const APP_URL = `https://admin.shopify.com/store/${SHOP}/apps/${APP_HANDLE}/shop
 
 /** Pages to visit (in order), skipping setup pages covered in Screencast 1 */
 const PAGES = [
-	{ id: "dashboard", path: "/shopify-admin", label: "Dashboard", navText: null },
-	{ id: "followups", path: "/shopify-admin/follow-ups", label: "Follow Ups", navText: "Follow Ups" },
-	{ id: "carts", path: "/shopify-admin/shopping-carts", label: "Shopping Carts", navText: "Shopping Carts" },
-	{ id: "orders", path: "/shopify-admin/draft-orders", label: "Draft Orders", navText: "Draft Orders" },
-	{ id: "faqs", path: "/shopify-admin/ai-faqs", label: "AI FAQs", navText: "AI FAQs" },
-	{ id: "documents", path: "/shopify-admin/ai-documents", label: "AI Documents", navText: "AI Documents" },
-	{ id: "crawl", path: "/shopify-admin/site-crawl", label: "Site Crawl", navText: "Site Crawl" },
-	{ id: "products", path: "/shopify-admin/products", label: "Sync Products", navText: "Sync Products" },
+	{
+		id: "dashboard",
+		path: "/shopify-admin",
+		label: "Dashboard",
+		navText: null,
+	},
+	{
+		id: "followups",
+		path: "/shopify-admin/follow-ups",
+		label: "Follow Ups",
+		navText: "Follow Ups",
+	},
+	{
+		id: "carts",
+		path: "/shopify-admin/shopping-carts",
+		label: "Shopping Carts",
+		navText: "Shopping Carts",
+	},
+	{
+		id: "orders",
+		path: "/shopify-admin/draft-orders",
+		label: "Draft Orders",
+		navText: "Draft Orders",
+	},
+	{
+		id: "faqs",
+		path: "/shopify-admin/ai-faqs",
+		label: "AI FAQs",
+		navText: "AI FAQs",
+	},
+	{
+		id: "documents",
+		path: "/shopify-admin/ai-documents",
+		label: "AI Documents",
+		navText: "AI Documents",
+	},
+	{
+		id: "crawl",
+		path: "/shopify-admin/site-crawl",
+		label: "Site Crawl",
+		navText: "Site Crawl",
+	},
+	{
+		id: "products",
+		path: "/shopify-admin/products",
+		label: "Sync Products",
+		navText: "Sync Products",
+	},
 ] as const;
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -53,11 +93,17 @@ function appFrame(page: Page): FrameLocator {
 async function waitForPolaris(page: Page) {
 	const frame = appFrame(page);
 	try {
-		await frame.locator("s-section").first().waitFor({ state: "visible", timeout: 15_000 });
+		await frame
+			.locator("s-section")
+			.first()
+			.waitFor({ state: "visible", timeout: 15_000 });
 	} catch {
 		console.log("  Polaris not loaded — refreshing page...");
 		await page.reload({ waitUntil: "domcontentloaded" });
-		await frame.locator("s-section").first().waitFor({ state: "visible", timeout: 15_000 });
+		await frame
+			.locator("s-section")
+			.first()
+			.waitFor({ state: "visible", timeout: 15_000 });
 	}
 	console.log("  Polaris loaded.");
 }
@@ -65,7 +111,11 @@ async function waitForPolaris(page: Page) {
 /** Click a sidebar nav link in the Shopify admin shell (main page, not iframe).
  *  Polaris <a> elements need force: true because Playwright's visibility check
  *  doesn't work reliably with them. */
-async function clickNavLink(ctx: ScreencastContext, navText: string, pagePath: string) {
+async function clickNavLink(
+	ctx: ScreencastContext,
+	navText: string,
+	pagePath: string,
+) {
 	const { page } = ctx;
 
 	// Find the nav link in the main Shopify admin frame by text content
@@ -91,7 +141,10 @@ async function clickNavLink(ctx: ScreencastContext, navText: string, pagePath: s
 async function waitForPage(page: Page, label: string) {
 	const frame = appFrame(page);
 	try {
-		await frame.locator("s-page, s-section").first().waitFor({ state: "visible", timeout: 10_000 });
+		await frame
+			.locator("s-page, s-section")
+			.first()
+			.waitFor({ state: "visible", timeout: 10_000 });
 	} catch {
 		console.log(`  Warning: ${label} page elements slow to load`);
 	}
@@ -100,16 +153,21 @@ async function waitForPage(page: Page, label: string) {
 // ── Main ────────────────────────────────────────────────────────────
 
 async function main() {
-	const fromArg = process.argv.find((a) => a.startsWith("--from="))?.split("=")[1] ?? "dashboard";
+	const fromArg =
+		process.argv.find((a) => a.startsWith("--from="))?.split("=")[1] ??
+		"dashboard";
 	const startIdx = PAGES.findIndex((p) => p.id === fromArg);
 	if (startIdx < 0) {
-		console.error(`Unknown --from value: ${fromArg}. Options: ${PAGES.map((p) => p.id).join(", ")}`);
+		console.error(
+			`Unknown --from value: ${fromArg}. Options: ${PAGES.map((p) => p.id).join(", ")}`,
+		);
 		process.exit(1);
 	}
 
-	const startUrl = startIdx === 0
-		? APP_URL
-		: APP_URL.replace("/shopify-admin", PAGES[startIdx].path);
+	const startUrl =
+		startIdx === 0
+			? APP_URL
+			: APP_URL.replace("/shopify-admin", PAGES[startIdx].path);
 
 	console.log(`── Screencast 2: Admin Experience (from=${fromArg}) ──\n`);
 
@@ -126,11 +184,19 @@ async function main() {
 
 			// Scroll down to see all dashboard content
 			const frame = appFrame(page);
-			await frame.locator("s-section").last().scrollIntoViewIfNeeded().catch(() => {});
+			await frame
+				.locator("s-section")
+				.last()
+				.scrollIntoViewIfNeeded()
+				.catch(() => {});
 			await pause(ctx, 2000);
 
 			// Scroll back to top
-			await frame.locator("s-section").first().scrollIntoViewIfNeeded().catch(() => {});
+			await frame
+				.locator("s-section")
+				.first()
+				.scrollIntoViewIfNeeded()
+				.catch(() => {});
 			await pause(ctx, 1000);
 		}
 
@@ -147,11 +213,19 @@ async function main() {
 
 			// Scroll down if page has content below fold
 			const frame = appFrame(page);
-			await frame.locator("s-section").last().scrollIntoViewIfNeeded().catch(() => {});
+			await frame
+				.locator("s-section")
+				.last()
+				.scrollIntoViewIfNeeded()
+				.catch(() => {});
 			await pause(ctx, 2000);
 
 			// Scroll back up
-			await frame.locator("s-section").first().scrollIntoViewIfNeeded().catch(() => {});
+			await frame
+				.locator("s-section")
+				.first()
+				.scrollIntoViewIfNeeded()
+				.catch(() => {});
 			await pause(ctx, 1000);
 		}
 
