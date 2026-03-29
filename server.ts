@@ -6,6 +6,7 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import type { Browser } from "playwright";
 import { chromium } from "playwright";
+import { getPlaywrightProxy } from "./proxy";
 import {
 	clearSessionCookie,
 	createSessionToken,
@@ -999,7 +1000,7 @@ app.post("/api/simulate", async (req, res) => {
 
 	let browser: Browser | null = null;
 	try {
-		browser = await chromium.launch({ headless: true });
+		browser = await chromium.launch({ headless: true, proxy: getPlaywrightProxy() });
 		const context = await browser.newContext({
 			viewport: { width: 1920, height: 1080 },
 			ignoreHTTPSErrors: true,

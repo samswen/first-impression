@@ -13,6 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { chromium } from "playwright";
+import { getPlaywrightProxy } from "./proxy";
 import type { TenantInfo } from "./tenant";
 import { textToSpeech } from "./voice";
 
@@ -96,7 +97,7 @@ async function screenshotWithWidget(
 	url: string,
 	outputPath: string,
 ): Promise<void> {
-	const browser = await chromium.launch({ headless: true });
+	const browser = await chromium.launch({ headless: true, proxy: getPlaywrightProxy() });
 	const context = await browser.newContext({
 		viewport: { width: 1920, height: 1080 },
 		ignoreHTTPSErrors: true,

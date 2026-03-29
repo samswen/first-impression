@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { chromium, type Page } from "playwright";
+import { getPlaywrightProxy } from "./proxy";
 
 const execP = promisify(execFile);
 
@@ -202,7 +203,7 @@ export class Recorder {
 			emit("progress", `Taking snapshot of ${this.config.url}...`);
 
 			// Use a separate browser for the snapshot (no recording)
-			const snapBrowser = await chromium.launch({ headless: true });
+			const snapBrowser = await chromium.launch({ headless: true, proxy: getPlaywrightProxy() });
 			let snapshotOk = false;
 
 			try {
@@ -292,6 +293,7 @@ body { ${bgStyle} }
 		emit("progress", "Launching recording browser...");
 		const browser = await chromium.launch({
 			headless: !this.config.headed,
+			proxy: getPlaywrightProxy(),
 		});
 		const context = await browser.newContext({
 			viewport: { width: 1920, height: 1080 },
