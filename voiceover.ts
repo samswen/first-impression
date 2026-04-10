@@ -38,6 +38,9 @@ interface NarrationClip {
 /**
  * Generate narration text for a timeline event.
  * Returns null for events that shouldn't be narrated (zoom-in/out, etc.)
+ *
+ * TTS pronunciation: use "X Infer dot AI" (with spaces) when referring to
+ * the brand in spoken text. ElevenLabs mispronounces "XInfer" as one word.
  */
 export function narrationForEvent(
 	event: TimelineEntry,

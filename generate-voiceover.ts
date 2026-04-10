@@ -2,6 +2,9 @@
  * Generate voiceover audio clips from the voiceover JSON
  * and mix them into the trimmed screencast video.
  *
+ * TTS pronunciation: write "X Infer dot AI" (with spaces) in voiceover
+ * text. ElevenLabs mispronounces "XInfer" and "Xinfer.AI" as one word.
+ *
  * Usage: npx tsx generate-voiceover.ts
  */
 

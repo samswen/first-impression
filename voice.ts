@@ -3,6 +3,10 @@
  *
  * Calls POST /api/first-impression/tts which handles ElevenLabs + S3 caching.
  * Returns the audio buffer (MP3) by following the 302 redirect to the CDN URL.
+ *
+ * TTS pronunciation: write "X Infer dot AI" (with spaces) in any text that
+ * will be spoken aloud. ElevenLabs mispronounces "XInfer" and "Xinfer.AI"
+ * as a single word. The spaced-out form produces correct pronunciation.
  */
 
 import crypto from "node:crypto";

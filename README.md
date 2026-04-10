@@ -1,6 +1,6 @@
 # First Impression
 
-Target prospect tool that produces polished, self-contained demo packages for [XInfer.AI](https://xinfer.ai). Each package showcases a recorded AI shopping assistant demo on the prospect's actual website, uploaded to S3 and accessible at:
+Prospect outreach tool that produces polished, self-contained demo packages for [XInfer.AI](https://xinfer.ai). Each package showcases a recorded AI shopping assistant demo on the prospect's actual website, uploaded to S3 and accessible at:
 
 ```
 https://assets.xinfer.com/demo/[tenant-slug]
@@ -33,6 +33,7 @@ https://assets.xinfer.com/demo/[tenant-slug]
 - **Intro scene** — branded opening with site snapshot, text overlay card, and AI voiceover introducing the demo
 - **Outro scene** — closing scene with call-to-action narration
 - **ElevenLabs TTS** — professional voice synthesis with configurable voice, speed, and style
+- **TTS pronunciation** — write "X Infer dot AI" (with spaces) in any narration text; ElevenLabs mispronounces "XInfer" as a single word
 - **Voice caching** — SHA-256 hash-based caching of TTS results to avoid redundant API calls
 
 ### Publishing
@@ -267,23 +268,30 @@ Each published demo at `https://assets.xinfer.com/demo/[tenant-slug]` includes:
 ## Architecture
 
 ```
-server.ts          Express server — 17 API endpoints + static files
-recorder.ts        Playwright recording engine
-helpers.ts         Playwright interaction helpers (typing, zoom, scroll)
-tenant.ts          Fetches business info from rag-chatbot API
-voice.ts           ElevenLabs TTS with SHA-256 hash caching
-narrate.ts         Intro/outro scene generation (snapshot + overlay + voiceover)
-voiceover.ts       Timeline-based narration (per-event TTS + FFmpeg audio mix)
-freeze-detect.ts   FFmpeg freeze detection + frame extraction
-trim.ts            FFmpeg trim/concat pipeline
-demo-page.ts       Generates static HTML demo page per tenant
-upload.ts          S3 publisher (video + snapshot + HTML)
-public/index.html  Single-page web UI (recording studio)
-record.ts          CLI entry point (recording only)
-cli.ts             CLI entry point (autonomous 7-step pipeline)
-worker.ts          SQS queue worker (polls, spawns CLI, SNS on failure, auto-shutdown)
-boot.sh            EC2 boot script (git pull + pnpm install)
+server.ts            Express server — 17 API endpoints + static files
+recorder.ts          Playwright recording engine
+helpers.ts           Playwright interaction helpers (typing, zoom, scroll)
+tenant.ts            Fetches business info from rag-chatbot API
+voice.ts             ElevenLabs TTS with SHA-256 hash caching
+narrate.ts           Intro/outro scene generation (snapshot + overlay + voiceover)
+voiceover.ts         Timeline-based narration (per-event TTS + FFmpeg audio mix)
+generate-voiceover.ts  Standalone voiceover generation script
+freeze-detect.ts     FFmpeg freeze detection + frame extraction
+trim.ts              FFmpeg trim/concat pipeline
+demo-page.ts         Generates static HTML demo page per tenant
+upload.ts            S3 publisher (video + snapshot + HTML)
+auth.ts              Authentication helpers
+proxy.ts             Proxy server for widget injection
+turnstile-solver.ts  Cloudflare Turnstile bypass for recording
+pipeline.ts          Pipeline orchestration
+public/index.html    Single-page web UI (recording studio)
+record.ts            CLI entry point (recording only)
+cli.ts               CLI entry point (autonomous 7-step pipeline)
+worker.ts            SQS queue worker (polls, spawns CLI, SNS on failure, auto-shutdown)
+boot.sh              EC2 boot script (git pull + pnpm install)
 ```
+
+> **Note**: Screencast recording (Shopify App Store demos) has been extracted to the separate [`screen-casts`](../screen-casts/) project.
 
 ### API Endpoints
 

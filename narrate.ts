@@ -35,6 +35,10 @@ export interface SceneResult {
 export type IntroOptions = SceneOptions;
 export type IntroResult = SceneResult;
 
+/**
+ * TTS pronunciation: use "X Infer dot AI" (with spaces) when referring to
+ * the brand in spoken text. ElevenLabs mispronounces "XInfer" as one word.
+ */
 export function buildNarrativeText(tenantInfo: TenantInfo): string {
 	const assistantName =
 		tenantInfo.setup.assistantName ||
