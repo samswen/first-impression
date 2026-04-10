@@ -182,8 +182,6 @@ Processes tasks from an SQS queue unattended. Designed to run as a systemd servi
 pnpm worker
 ```
 
-**Loop**: long-polls SQS → spawns `tsx cli.ts` per task → deletes message on success → sends SNS on failure (including 30-minute timeout) → shuts down EC2 when queue is empty.
-
 Add `.env` variables:
 
 ```env
@@ -201,19 +199,60 @@ AWS_REGION=us-east-2
   "url": "https://example.com",
   "widgetUrl": "https://demo-agent.xinfer.ai/widget.js",
   "queries": ["Show me products", "What about returns?"],
-  "speed": 2,
   "force": true
 }
 ```
 
 Only `tenantId` is required; all other fields are optional overrides.
 
-**Infrastructure** (in `cicd-run`):
-- `fi-ami-setup.sh` — AMI setup: Ubuntu 24.04 ARM64, Node.js, FFmpeg, Playwright, systemd service
-- `lambda/fiQueueChecker.js` — hourly Lambda checks queue depth, launches spot instance if messages pending
-- `boot.sh` — `ExecStartPre` script that runs `git pull` + `pnpm install` on each boot
+#### End-to-End Flow
 
-**SQS queue settings**: visibility timeout 1800s (30 min), long poll 20s, retention 4 days.
+```
+1. ENQUEUE
+   POST /api/first-impression/queue (rag-chatbot)
+   └─> Sends JSON message to SQS queue
+
+2. HOURLY CHECK (EventBridge)
+   fiQueueChecker Lambda (every 60 min)
+   ├─> Reads SQS queue depth
+   ├─> Counts running fi-worker EC2 instances
+   ├─> Calculates needed workers (~6 tasks per instance)
+   └─> Launches ARM64 spot instances via CreateFleet
+
+3. INSTANCE BOOT (systemd)
+   first-impression-worker.service
+   ├─> ExecStartPre: boot.sh (git pull + pnpm install)
+   └─> ExecStart: pnpm worker
+
+4. WORKER LOOP
+   worker.ts polls SQS (20s long-poll, 30-min visibility timeout)
+   └─> Spawns: tsx cli.ts <tenantId> [--email ...] [--url ...] [--queries ...]
+
+5. COMPLETION
+   ├─> Success (exit 0): delete message, continue polling
+   ├─> Failure/timeout (30 min): SNS notification, message returns to queue
+   └─> Queue empty: check EC2 shutdown tag → terminate instance
+```
+
+#### Infrastructure (in `cicd-run`)
+
+| File | Purpose |
+|------|---------|
+| `fi-ami-setup.sh` | AMI setup: Ubuntu 24.04 ARM64, Node.js, FFmpeg, Playwright, systemd service |
+| `first-impression-worker.service` | Systemd unit: runs `boot.sh` then `pnpm worker` |
+| `lambda/fiQueueChecker.js` | EventBridge Lambda: checks queue depth, launches spot instances via CreateFleet |
+| `lambda/deploy-fiQueueChecker.sh` | Deploys the Lambda + EventBridge schedule rule |
+| `lambda/fiQueueChecker-iam-policy.json` | IAM permissions for the Lambda (SQS, EC2, IAM) |
+
+#### Instance Details
+
+- **AMI base**: Ubuntu 24.04 LTS ARM64
+- **Instance type**: `t4g.medium` (spot)
+- **Spot strategy**: `lowest-price` across 3 subnets
+- **Boot**: `boot.sh` runs `git pull origin main && pnpm install` on every start
+- **Auto-shutdown**: when queue is empty, instance checks its `shutdown` EC2 tag — terminates unless tag is `"no"`
+- **SQS settings**: visibility timeout 1800s (30 min), long poll 20s, retention 4 days
+- **Failure notifications**: SNS topic `first-impression-failure`
 
 ### CLI Recording
 
@@ -285,7 +324,7 @@ turnstile-solver.ts  Cloudflare Turnstile bypass for recording
 pipeline.ts          Pipeline orchestration
 public/index.html    Single-page web UI (recording studio)
 record.ts            CLI entry point (recording only)
-cli.ts               CLI entry point (autonomous 7-step pipeline)
+cli.ts               CLI entry point (autonomous 6-step pipeline)
 worker.ts            SQS queue worker (polls, spawns CLI, SNS on failure, auto-shutdown)
 boot.sh              EC2 boot script (git pull + pnpm install)
 ```
