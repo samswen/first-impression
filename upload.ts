@@ -104,19 +104,18 @@ async function uploadWithPresignedUrl(
 	contentType: string,
 	cacheControl = "public, max-age=31536000, immutable",
 ): Promise<void> {
-	// Convert Buffer to Uint8Array for fetch compatibility.
-	// Must use buffer/byteOffset/byteLength to avoid picking up Node's pooled ArrayBuffer.
-	const fetchBody = Buffer.isBuffer(body)
-		? new Uint8Array(body.buffer, body.byteOffset, body.byteLength)
-		: body;
-
 	const res = await fetch(presignedUrl, {
 		method: "PUT",
 		headers: {
 			"Content-Type": contentType,
 			"Cache-Control": cacheControl,
+			...(Buffer.isBuffer(body)
+				? { "Content-Length": String(body.byteLength) }
+				: {}),
 		},
-		body: fetchBody,
+		body: Buffer.isBuffer(body)
+			? new Blob([body.subarray() as BlobPart])
+			: body,
 	});
 
 	if (!res.ok) {
@@ -225,7 +224,46 @@ export async function publishDemo(
 		);
 	}
 
-	// 3. Generate demo page HTML
+	// 3. Create admin invitation link (non-fatal if it fails)
+	let inviteUrl: string | undefined;
+	const ragBaseUrl = process.env.RAG_CHATBOT_BASE_URL;
+	const fiApiKey = process.env.FIRST_IMPRESSION_API_KEY;
+	if (ragBaseUrl && fiApiKey) {
+		try {
+			const inviteRes = await fetch(
+				`${ragBaseUrl}/api/first-impression/t/${tenantInfo.tenantId}/admin-invite`,
+				{
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						Authorization: `Bearer ${fiApiKey}`,
+					},
+					body: JSON.stringify({
+						expiryDays: 14,
+						maxVisits: 7,
+						maxRedeems: 2,
+						createdBy: email,
+						publishedId: publishedId ?? undefined,
+					}),
+				},
+			);
+			if (inviteRes.ok) {
+				const inviteData = await inviteRes.json();
+				inviteUrl = inviteData.inviteUrl;
+				console.log(`[Publish] Admin invite created: ${inviteUrl}`);
+			} else {
+				console.warn(
+					`[Publish] Admin invite creation failed: ${inviteRes.status}`,
+				);
+			}
+		} catch (err) {
+			console.warn(
+				`[Publish] Admin invite creation error: ${err instanceof Error ? err.message : err}`,
+			);
+		}
+	}
+
+	// 4. Generate demo page HTML
 	const assetsBaseUrl = "https://assets.xinfer.ai";
 	const pageOpts: DemoPageOptions = {
 		tenantInfo,
@@ -238,6 +276,7 @@ export async function publishDemo(
 		trackingUrl: process.env.FI_ACCESS_URL,
 		isPreviewMode: !!widgetUrl,
 		subtitle: opts.subtitle,
+		inviteUrl,
 	};
 	const html = generateDemoPage(pageOpts);
 

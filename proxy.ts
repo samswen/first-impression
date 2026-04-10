@@ -42,7 +42,7 @@ export function isProxyEnabled(): boolean {
  * Fetch the bypass domain list from rag-chatbot (once, cached).
  */
 async function fetchBypassDomains(): Promise<string[]> {
-	if (bypassDomains) return bypassDomains;
+	if (bypassDomains !== null) return bypassDomains;
 
 	const baseUrl = process.env.RAG_CHATBOT_BASE_URL;
 	const apiKey = process.env.FIRST_IMPRESSION_API_KEY;
@@ -66,8 +66,10 @@ async function fetchBypassDomains(): Promise<string[]> {
 		);
 		if (res.ok) {
 			const data = await res.json();
-			bypassDomains = data.domains ?? [];
-			console.log(`[Proxy] Loaded bypass domains: ${bypassDomains.join(", ")}`);
+			bypassDomains = (data.domains as string[]) ?? [];
+			console.log(
+				`[Proxy] Loaded bypass domains: ${bypassDomains.join(", ")}`,
+			);
 		} else {
 			console.warn(`[Proxy] Failed to fetch bypass domains: ${res.status}`);
 			bypassDomains = [];
@@ -79,7 +81,7 @@ async function fetchBypassDomains(): Promise<string[]> {
 		bypassDomains = [];
 	}
 
-	return bypassDomains;
+	return bypassDomains!;
 }
 
 /**

@@ -15,7 +15,6 @@ interface QueueTask {
 	url?: string;
 	widgetUrl?: string;
 	queries?: string[];
-	speed?: number;
 	force?: boolean;
 }
 
@@ -46,7 +45,6 @@ function buildCliArgs(task: QueueTask): string[] {
 	if (task.email) args.push("--email", task.email);
 	if (task.url) args.push("--url", task.url);
 	if (task.widgetUrl) args.push("--widget-url", task.widgetUrl);
-	if (task.speed) args.push("--speed", String(task.speed));
 	if (task.force) args.push("--force");
 	if (task.queries && task.queries.length > 0) {
 		args.push("--queries", ...task.queries);

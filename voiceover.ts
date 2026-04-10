@@ -9,17 +9,84 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import "dotenv/config";
 import type { TimelineEntry } from "./recorder";
 import type { TenantInfo } from "./tenant";
 import { textToSpeech } from "./voice";
 
 const execP = promisify(execFile);
 
+interface NarrationSegment {
+	action: string;
+	query?: string;
+	response?: string;
+	availableDuration: number;
+}
+
+/**
+ * Call the LLM narration API to generate contextual voiceover text.
+ * Returns a map of action → narration text, or null on failure.
+ */
+async function generateNarrations(
+	tenantId: number,
+	segments: NarrationSegment[],
+	assistantName: string,
+	businessName: string,
+): Promise<Map<string, string> | null> {
+	const baseUrl = process.env.RAG_CHATBOT_BASE_URL;
+	const apiKey = process.env.FIRST_IMPRESSION_API_KEY;
+
+	if (!baseUrl || !apiKey) {
+		console.warn(
+			"[Voiceover] Missing RAG_CHATBOT_BASE_URL or FIRST_IMPRESSION_API_KEY, skipping LLM narration",
+		);
+		return null;
+	}
+
+	try {
+		const res = await fetch(
+			`${baseUrl}/api/first-impression/t/${tenantId}/narrate`,
+			{
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${apiKey}`,
+				},
+				body: JSON.stringify({
+					segments,
+					assistantName,
+					businessName,
+				}),
+			},
+		);
+
+		if (!res.ok) {
+			const body = await res.text().catch(() => "");
+			console.warn(`[Voiceover] Narration API returned ${res.status}: ${body}`);
+			return null;
+		}
+
+		const data = (await res.json()) as {
+			narrations: Array<{ action: string; text: string }>;
+		};
+
+		const map = new Map<string, string>();
+		for (const n of data.narrations) {
+			map.set(n.action, n.text);
+		}
+		return map;
+	} catch (error) {
+		console.warn("[Voiceover] Narration API call failed:", error);
+		return null;
+	}
+}
+
 export interface VoiceoverOptions {
 	recordingDir: string;
-	videoFile: string; // e.g. "raw-speed-2x.webm"
+	videoFile: string; // e.g. "raw.webm"
 	timeline: TimelineEntry[];
 	tenantInfo: TenantInfo;
+	tenantId: number;
 }
 
 export interface VoiceoverResult {
@@ -91,7 +158,7 @@ export async function addVoiceover(
 	onProgress?: (message: string) => void,
 	signal?: AbortSignal,
 ): Promise<VoiceoverResult> {
-	const { recordingDir, videoFile, timeline, tenantInfo } = opts;
+	const { recordingDir, videoFile, timeline, tenantInfo, tenantId } = opts;
 	const videoPath = path.join(recordingDir, videoFile);
 	const voDir = path.join(recordingDir, "voiceover");
 
@@ -104,16 +171,57 @@ export async function addVoiceover(
 		fs.mkdirSync(voDir, { recursive: true });
 	}
 
-	// 1. Generate narration clips
-	const clips: NarrationClip[] = [];
-	const narrations = timeline
-		.map((event) => ({ event, text: narrationForEvent(event, tenantInfo) }))
+	const assistantName =
+		tenantInfo.setup.assistantName ||
+		tenantInfo.app.title ||
+		"the AI assistant";
+	const businessName = tenantInfo.setup.businessName || "the website";
+
+	// 1. Build narration-worthy events and try LLM narration
+	const narratableEvents = timeline.filter(
+		(e) => e.action === "open-widget" || e.action.startsWith("query-"),
+	);
+
+	// Build segments for the narration API
+	// Use 75% of real duration to give TTS timing headroom
+	const segments: NarrationSegment[] = narratableEvents.map((e) => ({
+		action: e.action,
+		query: e.action.startsWith("query-") ? e.label : undefined,
+		response: e.response?.slice(0, 500),
+		availableDuration: Math.min(e.endTime - e.startTime, 20) * 0.75,
+	}));
+
+	// Try LLM narration, fall back to templates on failure
+	let llmNarrations: Map<string, string> | null = null;
+	if (segments.length > 0) {
+		onProgress?.("Generating AI narration...");
+		llmNarrations = await generateNarrations(
+			tenantId,
+			segments,
+			assistantName,
+			businessName,
+		);
+		if (llmNarrations) {
+			onProgress?.(`AI narration generated for ${llmNarrations.size} segments`);
+		} else {
+			onProgress?.("AI narration unavailable, using templates");
+		}
+	}
+
+	// Resolve final narration text per event (LLM → template fallback)
+	const narrations = narratableEvents
+		.map((event) => {
+			const llmText = llmNarrations?.get(event.action);
+			const text = llmText || narrationForEvent(event, tenantInfo);
+			return { event, text };
+		})
 		.filter(
 			(n): n is { event: TimelineEntry; text: string } => n.text !== null,
 		);
 
 	onProgress?.(`Generating ${narrations.length} narration clips...`);
 
+	const clips: NarrationClip[] = [];
 	for (let i = 0; i < narrations.length; i++) {
 		if (signal?.aborted) throw new Error("Cancelled");
 		const { event, text } = narrations[i];
@@ -135,6 +243,19 @@ export async function addVoiceover(
 
 	if (clips.length === 0) {
 		throw new Error("No narration clips generated");
+	}
+
+	// Adjust start times to prevent overlap — if a clip would start before
+	// the previous one finishes, delay it so there's no audio collision.
+	for (let i = 1; i < clips.length; i++) {
+		const prevEnd = clips[i - 1].startTime + clips[i - 1].duration;
+		if (clips[i].startTime < prevEnd) {
+			const delay = prevEnd - clips[i].startTime;
+			onProgress?.(
+				`Clip ${i + 1} delayed by ${delay.toFixed(1)}s to avoid overlap`,
+			);
+			clips[i].startTime = prevEnd;
+		}
 	}
 
 	// Save clip manifest for later listing

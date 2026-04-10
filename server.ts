@@ -1034,9 +1034,7 @@ app.post("/api/simulate", async (req, res) => {
 			console.log(`[Simulate] Cloudflare challenge for ${url}, solving...`);
 			const result = await solveTurnstile(page);
 			if (result.solved) {
-				console.log(
-					"[Simulate] Challenge solved, waiting for site to load...",
-				);
+				console.log("[Simulate] Challenge solved, waiting for site to load...");
 				try {
 					await page.waitForLoadState("networkidle", { timeout: 10_000 });
 				} catch {

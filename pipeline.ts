@@ -167,6 +167,7 @@ export function computeTrimmedTimeline(
 				label: entry.label,
 				startTime: Math.max(0, newStart),
 				endTime: newEnd,
+				response: entry.response,
 			});
 		}
 	}
@@ -183,6 +184,7 @@ export function computeSpeedTimeline(
 		label: entry.label,
 		startTime: entry.startTime / speed,
 		endTime: entry.endTime / speed,
+		response: entry.response,
 	}));
 }
 
@@ -348,6 +350,8 @@ export interface PublishResult {
 	businessName: string;
 	assistantName: string;
 	website: string | null;
+	tagline: string | null;
+	inventoryDescription: string | null;
 	publishedId?: number;
 	version?: number;
 }
@@ -711,7 +715,7 @@ export async function addVoiceoverToVideo(
 
 	if (signal?.aborted) throw new Error("Cancelled");
 	const result = await addVoiceover(
-		{ recordingDir: dir, videoFile, timeline, tenantInfo },
+		{ recordingDir: dir, videoFile, timeline, tenantInfo, tenantId },
 		onProgress,
 		signal,
 	);
@@ -839,29 +843,43 @@ export async function composeVideo(
 	}
 
 	if (!composed) {
+		// Use filter_complex concat (handles mixed codecs like VP8+VP9)
 		onProgress?.("Re-encoding (stream copy failed)...");
-		await execP(
-			"ffmpeg",
-			[
-				"-f",
-				"concat",
-				"-safe",
-				"0",
-				"-i",
-				concatListPath,
-				"-c:v",
-				"libvpx-vp9",
-				"-b:v",
-				"2M",
-				"-pix_fmt",
-				"yuv420p",
-				"-c:a",
-				"libopus",
-				"-y",
-				outputPath,
-			],
-			{ maxBuffer: 10 * 1024 * 1024, timeout: 5 * 60 * 1000 },
+		const inputPaths: string[] = [];
+		if (fs.existsSync(introPath)) inputPaths.push(introPath);
+		inputPaths.push(mainPath);
+		if (fs.existsSync(outroPath)) inputPaths.push(outroPath);
+
+		const reencodeArgs: string[] = [];
+		for (const p of inputPaths) {
+			reencodeArgs.push("-i", p);
+		}
+
+		const n = inputPaths.length;
+		const filterStreams = inputPaths.map((_, i) => `[${i}:v][${i}:a]`).join("");
+		reencodeArgs.push(
+			"-filter_complex",
+			`${filterStreams}concat=n=${n}:v=1:a=1[outv][outa]`,
+			"-map",
+			"[outv]",
+			"-map",
+			"[outa]",
+			"-c:v",
+			"libvpx-vp9",
+			"-b:v",
+			"2M",
+			"-pix_fmt",
+			"yuv420p",
+			"-c:a",
+			"libopus",
+			"-y",
+			outputPath,
 		);
+
+		await execP("ffmpeg", reencodeArgs, {
+			maxBuffer: 10 * 1024 * 1024,
+			timeout: 5 * 60 * 1000,
+		});
 	}
 
 	if (!fs.existsSync(outputPath)) {
@@ -1000,6 +1018,8 @@ export async function publishRecording(
 		assistantName:
 			tenantInfo.setup.assistantName || tenantInfo.app.title || "AI Assistant",
 		website: tenantInfo.setup.website || tenantInfo.app.homePageUrl || null,
+		tagline: tenantInfo.setup.tagline || null,
+		inventoryDescription: tenantInfo.setup.inventoryDescription || null,
 		publishedId: result.publishedId,
 		version: result.version,
 	};
@@ -1020,6 +1040,8 @@ export async function publishRecording(
 				businessName: publishResult.businessName,
 				assistantName: publishResult.assistantName,
 				demoUrl: publishResult.url,
+				tagline: publishResult.tagline,
+				inventoryDescription: publishResult.inventoryDescription,
 			}),
 		})
 			.then((r) => {

@@ -44,6 +44,7 @@ export interface TimelineEntry {
 	label: string;
 	startTime: number;
 	endTime: number;
+	response?: string;
 }
 
 export interface ProgressEvent {
@@ -235,64 +236,106 @@ export class Recorder {
 			emit("progress", `Taking snapshot of ${this.config.url}...`);
 
 			// Use a separate browser for the snapshot (no recording)
-			const snapBrowser = await chromium.launch({
-				headless: true,
-				proxy: await getPlaywrightProxy(),
-			});
+			// Retry once on failure (network/proxy can be flaky)
 			let snapshotOk = false;
-
-			try {
-				const snapContext = await snapBrowser.newContext({
-					viewport: { width: 1920, height: 1080 },
-					ignoreHTTPSErrors: true,
-					userAgent: CHROME_USER_AGENT,
+			for (let attempt = 1; attempt <= 2 && !snapshotOk; attempt++) {
+				if (attempt > 1) {
+					emit("progress", `Snapshot retry (attempt ${attempt})...`);
+				}
+				const snapBrowser = await chromium.launch({
+					headless: true,
+					proxy: await getPlaywrightProxy(),
 				});
-				await applyStealthToContext(snapContext);
-				const snapPage = await snapContext.newPage();
-				await loadPageForSnapshot(snapPage, this.config.url, emit);
 
-				const snapshotPath = path.join(dir, "snapshot.png");
-				await snapPage.screenshot({
-					path: snapshotPath,
-					fullPage: false,
-				});
-				await snapContext.close();
+				try {
+					const snapContext = await snapBrowser.newContext({
+						viewport: { width: 1920, height: 1080 },
+						ignoreHTTPSErrors: true,
+						userAgent: CHROME_USER_AGENT,
+					});
+					await applyStealthToContext(snapContext);
+					const snapPage = await snapContext.newPage();
+					await loadPageForSnapshot(snapPage, this.config.url, emit);
 
-				// Capture mobile snapshot at iPhone 14/15 size
-				const mobileContext = await snapBrowser.newContext({
-					viewport: { width: 390, height: 844 },
-					ignoreHTTPSErrors: true,
-					userAgent: CHROME_USER_AGENT,
-				});
-				await applyStealthToContext(mobileContext);
-				const mobilePage = await mobileContext.newPage();
-				await loadPageForSnapshot(mobilePage, this.config.url, emit);
+					const snapshotPath = path.join(dir, "snapshot.png");
+					await snapPage.screenshot({
+						path: snapshotPath,
+						fullPage: false,
+					});
+					await snapContext.close();
 
-				const snapshotMobilePath = path.join(dir, "snapshot-mobile.png");
-				await mobilePage.screenshot({
-					path: snapshotMobilePath,
-					fullPage: false,
-				});
-				await mobileContext.close();
-				snapshotOk = true;
-			} catch (snapErr) {
-				const msg =
-					snapErr instanceof Error ? snapErr.message : String(snapErr);
-				emit(
-					"progress",
-					`Could not reach ${this.config.url} (${msg}), using blank background...`,
-				);
+					// Capture mobile snapshot at iPhone 14/15 size
+					const mobileContext = await snapBrowser.newContext({
+						viewport: { width: 390, height: 844 },
+						ignoreHTTPSErrors: true,
+						userAgent: CHROME_USER_AGENT,
+					});
+					await applyStealthToContext(mobileContext);
+					const mobilePage = await mobileContext.newPage();
+					await loadPageForSnapshot(mobilePage, this.config.url, emit);
+
+					const snapshotMobilePath = path.join(dir, "snapshot-mobile.png");
+					await mobilePage.screenshot({
+						path: snapshotMobilePath,
+						fullPage: false,
+					});
+					await mobileContext.close();
+					snapshotOk = true;
+				} catch (snapErr) {
+					const msg =
+						snapErr instanceof Error ? snapErr.message : String(snapErr);
+					emit(
+						"progress",
+						`Could not reach ${this.config.url} (${msg})${attempt < 2 ? ", retrying..." : ""}`,
+					);
+				}
+
+				await snapBrowser.close();
 			}
 
-			await snapBrowser.close();
-
-			if (snapshotOk) {
+			// If snapshot still failed, try to reuse one from a previous recording
+			const snapshotPath = path.join(dir, "snapshot.png");
+			if (!snapshotOk) {
+				const parentDir = path.dirname(dir);
+				const siblings = fs.existsSync(parentDir)
+					? fs
+							.readdirSync(parentDir)
+							.filter((d) => d !== path.basename(dir))
+							.sort()
+							.reverse()
+					: [];
+				for (const sibling of siblings) {
+					const prevSnapshot = path.join(parentDir, sibling, "snapshot.png");
+					if (fs.existsSync(prevSnapshot)) {
+						fs.copyFileSync(prevSnapshot, snapshotPath);
+						const prevMobile = path.join(
+							parentDir,
+							sibling,
+							"snapshot-mobile.png",
+						);
+						if (fs.existsSync(prevMobile)) {
+							fs.copyFileSync(
+								prevMobile,
+								path.join(dir, "snapshot-mobile.png"),
+							);
+						}
+						snapshotOk = true;
+						emit("progress", "Using snapshot from previous recording");
+						break;
+					}
+				}
+				if (!snapshotOk) {
+					emit(
+						"progress",
+						"No previous snapshot available, using blank background...",
+					);
+				}
+			} else {
 				emit("progress", "Snapshot taken, building local page...");
 			}
 
 			// Build background style: screenshot if available, plain gradient if not
 			let bgStyle: string;
-			const snapshotPath = path.join(dir, "snapshot.png");
 			if (snapshotOk && fs.existsSync(snapshotPath)) {
 				const imgBuffer = fs.readFileSync(snapshotPath);
 				const imgBase64 = imgBuffer.toString("base64");
@@ -384,7 +427,7 @@ body { ${bgStyle} }
 
 			const widget = page.locator("#xinfer-chat-widget");
 			await widget.waitFor({ state: "attached", timeout: 30_000 });
-			const toggle = widget.locator("button.xinfer-toggle");
+			const toggle = widget.locator(".xinfer-toggle");
 			await toggle.waitFor({ state: "visible", timeout: 10_000 });
 
 			// Start the timeline clock only after the page is visible with widget
@@ -440,20 +483,24 @@ body { ${bgStyle} }
 				const queryStart = this.now();
 				emit("action-start", `Sending: "${query}"`, actionName);
 
-				await sendMessage(page, widget, query);
+				await sendMessage(page, widget, query, {
+					skipWaitBefore: i === 0,
+				});
 
-				// Extra pause after first query for reading
-				if (i === 0) {
-					await page.waitForTimeout(PAUSE_AFTER_RESPONSE + 3000);
-				} else {
-					await page.waitForTimeout(PAUSE_AFTER_RESPONSE);
-				}
+				// Extract AI response text from the last assistant bubble
+				const responseText = await widget
+					.locator(".chat-bubble-assistant")
+					.last()
+					.textContent()
+					.catch(() => null);
+
+				await page.waitForTimeout(PAUSE_AFTER_RESPONSE);
 
 				// Handle contact form — check after every response since the agent
 				// can request contact info for any query, not just predictable ones.
 				// Only fill once per session; the form may linger in the DOM after submission.
 				if (!formSubmitted) {
-					const form = panel.locator(".xinfer-followup-form");
+					const form = panel.locator(".chat-followup-form");
 					const hasForm = await form
 						.waitFor({ state: "visible", timeout: 3_000 })
 						.then(() => true)
@@ -461,13 +508,18 @@ body { ${bgStyle} }
 
 					if (hasForm) {
 						emit("progress", "Filling contact form...");
+
+						// Scroll the form into view so it's visible in the zoomed panel
+						await form.evaluate((el) => {
+							el.scrollIntoView({ behavior: "smooth", block: "center" });
+						});
 						await page.waitForTimeout(1500);
 
 						const nameInput = form.locator(
-							'input.xinfer-followup-input[name="name"]',
+							'input.chat-followup-input[name="name"]',
 						);
 						const emailInput = form.locator(
-							'input.xinfer-followup-input[name="email"]',
+							'input.chat-followup-input[name="email"]',
 						);
 
 						await nameInput.pressSequentially("Demo XInfer", {
@@ -479,7 +531,7 @@ body { ${bgStyle} }
 						});
 						await page.waitForTimeout(800);
 
-						const submitBtn = form.locator(".xinfer-followup-submit");
+						const submitBtn = form.locator(".chat-followup-submit");
 						await submitBtn.click();
 						emit("progress", "Form submitted, waiting for response...");
 
@@ -497,6 +549,7 @@ body { ${bgStyle} }
 					label: query,
 					startTime: queryStart,
 					endTime: this.now(),
+					response: responseText?.trim() || undefined,
 				});
 				emit("action-end", `Query ${i + 1} complete`, actionName);
 			}
@@ -527,9 +580,33 @@ body { ${bgStyle} }
 				throw new Error("No video file found in recording directory");
 			}
 
-			// Rename to raw.webm
+			// Rename to raw.webm and re-encode VP8→VP9 for consistent codec
 			const rawPath = path.join(dir, "raw.webm");
 			fs.renameSync(path.join(dir, videoFile), rawPath);
+
+			emit("progress", "Re-encoding to VP9...");
+			const vp9TmpPath = path.join(dir, "raw-vp9.webm");
+			await execP(
+				"ffmpeg",
+				[
+					"-i",
+					rawPath,
+					"-c:v",
+					"libvpx-vp9",
+					"-b:v",
+					"2M",
+					"-cpu-used",
+					"4",
+					"-pix_fmt",
+					"yuv420p",
+					"-c:a",
+					"libopus",
+					"-y",
+					vp9TmpPath,
+				],
+				{ timeout: 5 * 60 * 1000, maxBuffer: 10 * 1024 * 1024 },
+			);
+			fs.renameSync(vp9TmpPath, rawPath);
 
 			// Save timeline
 			const timelinePath = path.join(dir, "timeline.json");

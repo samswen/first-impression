@@ -8,8 +8,6 @@ import {
 	defaultSubtitleText,
 	generateIntroOutro,
 	publishRecording,
-	renderSpeedVideo,
-	speedLabel,
 	startRecording,
 } from "./pipeline";
 import { fetchTenantInfo } from "./tenant";
@@ -28,7 +26,6 @@ interface Config {
 	url?: string;
 	widgetUrl?: string;
 	queries?: string[];
-	speed: number;
 	headed: boolean;
 	noPublish: boolean;
 	force: boolean;
@@ -47,7 +44,6 @@ interface PipelineState {
 	queries: string[];
 	tagline: string;
 	inventoryDescription: string;
-	speed: number;
 }
 
 // ─── Arg parsing ─────────────────────────────────────────────────────
@@ -90,11 +86,10 @@ Usage:
 Steps:
   1  Fetch tenant info & generate AI content (URL, queries, subtitle, intro/outro)
   2  Record browser session via Playwright
-  3  Speed up video
-  4  Generate intro & outro scenes
-  5  Add voiceover narration
-  6  Compose final video (intro + main + outro)
-  7  Publish to S3
+  3  Generate intro & outro scenes
+  4  Add voiceover narration
+  5  Compose final video (intro + main + outro)
+  6  Publish to S3
 
 Options:
   --email <email>        User email for publish attribution (default: demo@xinfer.ai)
@@ -102,8 +97,7 @@ Options:
   --widget-url <url>     Override widget script URL (default: from tenant subdomain)
   --queries "q1" "q2"    Override queries (default: AI-generated or suggested actions)
   --recording <id>       Resume an existing recording (required with --from)
-  --from <step>          Start from step 1-7 (default: 1)
-  --speed <number>       Speed multiplier (default: 2)
+  --from <step>          Start from step 1-6 (default: 1)
   --headed               Show browser during recording
   --no-publish           Stop after compose, skip publish
   --force                Skip duplicate detection, always publish new version
@@ -138,7 +132,6 @@ async function parseConfig(): Promise<Config | null> {
 			url: json.url,
 			widgetUrl: json.widgetUrl,
 			queries: json.queries,
-			speed: json.speed ?? 2,
 			headed: json.headed ?? false,
 			noPublish: json.noPublish ?? false,
 			force: json.force ?? false,
@@ -153,7 +146,6 @@ async function parseConfig(): Promise<Config | null> {
 		url: getArg("--url"),
 		widgetUrl: getArg("--widget-url"),
 		queries: getListArg("--queries"),
-		speed: Number(getArg("--speed") || "2"),
 		headed: process.argv.includes("--headed"),
 		noPublish: process.argv.includes("--no-publish"),
 		force: process.argv.includes("--force"),
@@ -253,10 +245,10 @@ async function run() {
 		dir = ""; // set in step 1
 	}
 
-	// ── [1/7] Fetch tenant info & generate AI content ──────────────
+	// ── [1/6] Fetch tenant info & generate AI content ──────────────
 
 	if (cfg.from <= 1) {
-		console.log("\n[1/7] Fetch tenant info & generate AI content");
+		console.log("\n[1/6] Fetch tenant info & generate AI content");
 
 		log("Fetching tenant info...");
 		const info = await fetchTenantInfo(tenantId);
@@ -323,7 +315,6 @@ async function run() {
 			queries,
 			tagline: info.setup.tagline || "",
 			inventoryDescription: info.setup.inventoryDescription || "",
-			speed: cfg.speed,
 		};
 	} else {
 		// Resume: load state from recording dir
@@ -339,10 +330,10 @@ async function run() {
 		);
 	}
 
-	// ── [2/7] Record ──────────────────────────────────────────────
+	// ── [2/6] Record ──────────────────────────────────────────────
 
 	if (cfg.from <= 2) {
-		console.log("\n[2/7] Record");
+		console.log("\n[2/6] Record");
 		const result = startRecording(
 			RECORDINGS_DIR,
 			{
@@ -361,19 +352,10 @@ async function run() {
 		saveState(dir, state);
 	}
 
-	// ── [3/7] Speed up ───────────────────────────────────────────
+	// ── [3/6] Intro & outro ──────────────────────────────────────
 
 	if (cfg.from <= 3) {
-		console.log("\n[3/7] Speed up");
-		await renderSpeedVideo(dir, "raw.webm", state.speed, log);
-		state.completedStep = 3;
-		saveState(dir, state);
-	}
-
-	// ── [4/7] Intro & outro ──────────────────────────────────────
-
-	if (cfg.from <= 4) {
-		console.log("\n[4/7] Generate intro & outro");
+		console.log("\n[3/6] Generate intro & outro");
 		await generateIntroOutro(
 			dir,
 			tenantId,
@@ -383,41 +365,36 @@ async function run() {
 			},
 			log,
 		);
+		state.completedStep = 3;
+		saveState(dir, state);
+	}
+
+	// ── [4/6] Voiceover ──────────────────────────────────────────
+
+	if (cfg.from <= 4) {
+		console.log("\n[4/6] Add voiceover");
+		await addVoiceoverToVideo(dir, "raw.webm", tenantId, log);
 		state.completedStep = 4;
 		saveState(dir, state);
 	}
 
-	// ── [5/7] Voiceover ──────────────────────────────────────────
+	// ── [5/6] Compose ────────────────────────────────────────────
 
 	if (cfg.from <= 5) {
-		console.log("\n[5/7] Add voiceover");
-		await addVoiceoverToVideo(
-			dir,
-			`raw-speed-${speedLabel(state.speed)}.webm`,
-			tenantId,
-			log,
-		);
+		console.log("\n[5/6] Compose final video");
+		await composeVideo(dir, undefined, log);
 		state.completedStep = 5;
 		saveState(dir, state);
 	}
 
-	// ── [6/7] Compose ────────────────────────────────────────────
-
-	if (cfg.from <= 6) {
-		console.log("\n[6/7] Compose final video");
-		await composeVideo(dir, undefined, log);
-		state.completedStep = 6;
-		saveState(dir, state);
-	}
-
-	// ── [7/7] Publish ────────────────────────────────────────────
+	// ── [6/6] Publish ────────────────────────────────────────────
 
 	if (cfg.noPublish) {
-		console.log("\n[7/7] Publish — skipped (--no-publish)");
+		console.log("\n[6/6] Publish — skipped (--no-publish)");
 		return;
 	}
 
-	console.log("\n[7/7] Publish");
+	console.log("\n[6/6] Publish");
 	const email = cfg.email || "demo@xinfer.ai";
 	log(`Publishing as ${email}`);
 	const result = await publishRecording(dir, tenantId, {
@@ -434,7 +411,7 @@ async function run() {
 			queries: state.queries,
 		},
 	});
-	state.completedStep = 7;
+	state.completedStep = 6;
 	saveState(dir, state);
 	console.log("  Published:", JSON.stringify(result, null, 2));
 }

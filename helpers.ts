@@ -9,7 +9,7 @@ export const TYPING_DELAY = 70;
 export const PAUSE_AFTER_TYPE = 800;
 
 /** Pause after AI response finishes — let viewer read the answer */
-export const PAUSE_AFTER_RESPONSE = 2500;
+export const PAUSE_AFTER_RESPONSE = 1000;
 
 /** Max time to wait for AI streaming to finish */
 const STREAMING_TIMEOUT = 90_000;
@@ -17,50 +17,51 @@ const STREAMING_TIMEOUT = 90_000;
 // --- Helpers ---
 
 /**
- * Wait until streaming is fully done: suggest button visible AND no skeleton loaders.
- * The suggest button can briefly flash visible during product skeleton loading,
- * so we require both conditions to be true and stable.
+ * Wait until streaming is fully done: action bar visible AND no skeleton loaders.
+ * The widget's `.chat-action-bar` has `.chat-action-bar-hidden` (display: none)
+ * while `isLoading` is true. When streaming finishes, the hidden class is removed.
  */
 export async function waitForResponseDone(
 	page: Page,
 	widget: Locator,
 	timeout = STREAMING_TIMEOUT,
 ) {
-	const suggestBtn = widget.locator(".xinfer-float-suggestions-btn");
+	const actionBar = widget.locator(".chat-action-bar");
 	const deadline = Date.now() + timeout;
 
 	while (Date.now() < deadline) {
-		const ready = await suggestBtn
+		const ready = await actionBar
 			.evaluate((el) => {
 				const root = el.getRootNode() as ShadowRoot | Document;
 				const hasSkeletons =
 					root.querySelectorAll(
-						".xinfer-skeleton-bar, .xinfer-skeleton-image-block",
+						".chat-skeleton-bar, .chat-skeleton-image-block",
 					).length > 0;
-				const visible = getComputedStyle(el).visibility !== "hidden";
+				const visible = !el.classList.contains("chat-action-bar-hidden");
 				return visible && !hasSkeletons;
 			})
 			.catch(() => false);
 
 		if (ready) {
-			// Confirm it stays ready (not a brief flash)
-			await page.waitForTimeout(500);
-			const stillReady = await suggestBtn
+			// Confirm stable (not a brief flash during product card loading)
+			await page.waitForTimeout(250);
+			const stillReady = await actionBar
 				.evaluate((el) => {
 					const root = el.getRootNode() as ShadowRoot | Document;
 					const hasSkeletons =
 						root.querySelectorAll(
-							".xinfer-skeleton-bar, .xinfer-skeleton-image-block",
+							".chat-skeleton-bar, .chat-skeleton-image-block",
 						).length > 0;
-					const visible = getComputedStyle(el).visibility !== "hidden";
-					return visible && !hasSkeletons;
+					return (
+						!el.classList.contains("chat-action-bar-hidden") && !hasSkeletons
+					);
 				})
 				.catch(() => false);
 
 			if (stillReady) return;
 		}
 
-		await page.waitForTimeout(500);
+		await page.waitForTimeout(250);
 	}
 
 	throw new Error(`Response did not finish within ${timeout}ms`);
@@ -68,14 +69,24 @@ export async function waitForResponseDone(
 
 /**
  * Type a message into the widget input, send it, and wait for the AI response.
- * Uses the suggestions button visibility as the signal that streaming is done.
+ *
+ * @param skipWaitBefore - skip the initial waitForResponseDone (use for the
+ *   first message when the action bar hasn't appeared yet — it's hidden when
+ *   messages.length === 0 in the greeting view).
  */
-export async function sendMessage(page: Page, widget: Locator, text: string) {
+export async function sendMessage(
+	page: Page,
+	widget: Locator,
+	text: string,
+	{ skipWaitBefore = false } = {},
+) {
 	const input = widget.locator("#xinfer-input");
 	const send = widget.locator(".xinfer-send");
 
-	// Wait for suggestions button to be visible (previous response done)
-	await waitForResponseDone(page, widget);
+	// Wait for previous response to finish (skip for first message)
+	if (!skipWaitBefore) {
+		await waitForResponseDone(page, widget);
+	}
 
 	// Type with natural delay
 	await input.pressSequentially(text, { delay: TYPING_DELAY });
@@ -94,7 +105,7 @@ export async function sendMessage(page: Page, widget: Locator, text: string) {
 		await page.waitForTimeout(500);
 	}
 
-	// Wait for suggestions button to reappear (streaming finished)
+	// Wait for streaming to finish
 	await waitForResponseDone(page, widget);
 }
 
@@ -180,7 +191,7 @@ export async function scrollThroughResponse(
 	// Scroll to top of message (triggers lazy-loaded images), wait for them
 	await messagesContainer.evaluate(
 		(container, { idx }) => {
-			const msgs = container.querySelectorAll(".xinfer-message-assistant");
+			const msgs = container.querySelectorAll(".chat-bubble-assistant");
 			const msg = msgs[idx] as HTMLElement | undefined;
 			if (!msg) return;
 			container.scrollTop = msg.offsetTop - 8;
@@ -192,7 +203,7 @@ export async function scrollThroughResponse(
 	// Calculate all scroll stops upfront (immune to widget auto-scroll)
 	const stops = await messagesContainer.evaluate(
 		(container, { idx }) => {
-			const msgs = container.querySelectorAll(".xinfer-message-assistant");
+			const msgs = container.querySelectorAll(".chat-bubble-assistant");
 			const msg = msgs[idx] as HTMLElement | undefined;
 			if (!msg) return [];
 

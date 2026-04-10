@@ -948,11 +948,6 @@
       <button class="btn-primary" id="btn-record" onclick="startRecording()">Start New Recording</button>
 
       <div style="margin-top:8px">
-        <button class="btn-secondary" style="width:100%" id="btn-make-speed" onclick="makeSpeedVideo()" disabled>Make x2 Speed Video</button>
-      </div>
-      <div id="speed-status" style="margin-top:4px;font-size:12px"></div>
-
-      <div style="margin-top:8px">
         <button class="btn-secondary" style="width:100%" id="btn-intro-make" onclick="generateIntro()" disabled>Make Intro & Outro</button>
       </div>
       <div id="intro-status" style="margin-top:4px;font-size:12px"></div>
@@ -1383,7 +1378,7 @@
     cachedData = null;
     document.getElementById('detail-panel').innerHTML =
       '<div class="empty-state">Select a recording</div>';
-    speedExists = introExists = outroExists = voicedExists = finalExists = false;
+    introExists = outroExists = voicedExists = finalExists = false;
     updateActionButtons();
 
     syncTenantIdToUrl();
@@ -1520,7 +1515,7 @@
     if (localForm?.subtitle !== undefined) subtitleValue = localForm.subtitle;
     else subtitleValue = '';
     if (localForm?.tagline !== undefined) taglineValue = localForm.tagline;
-    else taglineValue = info.setup?.tagline || info.app?.greetTitle || '';
+    else taglineValue = info.setup?.tagline || '';
     if (localForm?.inventoryDescription !== undefined) inventoryDescriptionValue = localForm.inventoryDescription;
     else inventoryDescriptionValue = info.setup?.inventoryDescription || '';
     taglineOriginal = localForm?.taglineOriginal || '';
@@ -1686,7 +1681,7 @@
         populateIntroOutroDefaults(info);
 
         // Compare API values against stored originals to detect upstream changes
-        const apiTagline = info.setup?.tagline || info.app?.greetTitle || '';
+        const apiTagline = info.setup?.tagline || '';
         const apiDescription = info.setup?.inventoryDescription || '';
         const localForm = loadTenantFormState(tenantId);
 
@@ -1947,7 +1942,7 @@
       </div>
       <hr style="border:0;border-top:1px solid #333;margin:16px 0">
       <div style="margin-bottom:12px">
-        <span style="font-size:14px;font-weight:600;color:#ccc">We Understand Your Business</span>
+        <span style="font-size:14px;font-weight:600;color:#ccc">Business Background</span>
       </div>
       <div class="field">
         <label for="biz-tagline">Title</label>
@@ -2217,7 +2212,7 @@
           cachedData = null;
           document.getElementById('detail-panel').innerHTML =
             '<div class="empty-state">Select a recording</div>';
-          speedExists = introExists = outroExists = voicedExists = finalExists = false;
+          introExists = outroExists = voicedExists = finalExists = false;
           updateActionButtons();
         }
         return;
@@ -2230,7 +2225,7 @@
         cachedData = null;
         document.getElementById('detail-panel').innerHTML =
           '<div class="empty-state">Select a recording</div>';
-        speedExists = introExists = outroExists = voicedExists = finalExists = false;
+        introExists = outroExists = voicedExists = finalExists = false;
         updateActionButtons();
       }
 
@@ -2268,7 +2263,7 @@
         activeVideo = null;
         document.getElementById('detail-panel').innerHTML =
           '<div class="empty-state">Select a recording</div>';
-        speedExists = introExists = outroExists = voicedExists = finalExists = false;
+        introExists = outroExists = voicedExists = finalExists = false;
         updateActionButtons();
       }
       loadRecordings();
@@ -3233,12 +3228,16 @@
   let activeLetterTab = 'email';
 
   function composeOutreachLetters(data) {
-    const { url, businessName, assistantName } = data;
+    const { url, businessName, assistantName, tagline, inventoryDescription } = data;
+
+    const backgroundSection = (tagline || inventoryDescription)
+      ? `\n\nBusiness Background:\n${tagline ? tagline + '\n' : ''}${inventoryDescription || ''}`
+      : '';
 
     const emailSubject = `Your Personalized AI Assistant Demo \u2014 ${businessName}`;
     const emailBody = `Hi,
 
-I put together a personalized demo showing how an AI assistant can work on ${businessName}'s website \u2014 answering customer questions, guiding them through products, and driving conversions in real time.
+I put together a personalized demo showing how an AI assistant can work on ${businessName}'s website \u2014 answering customer questions, guiding them through products, and driving conversions in real time.${backgroundSection}
 
 Take a look here: ${url}
 
@@ -3326,7 +3325,6 @@ Best,`;
   }
 
   // --- Intro ---
-  let speedExists = false;
   let introExists = false;
   let outroExists = false;
   let voicedExists = false;
@@ -3334,7 +3332,7 @@ Best,`;
 
   async function checkVideoStates() {
     if (!selectedId) {
-      speedExists = introExists = outroExists = voicedExists = finalExists = false;
+      introExists = outroExists = voicedExists = finalExists = false;
       return;
     }
     const checks = ['intro.webm', 'outro.webm', 'final.webm'].map(async (f) => {
@@ -3343,24 +3341,22 @@ Best,`;
         return res.ok;
       } catch { return false; }
     });
-    // Check for speed and voiced videos in the recording data
+    // Check for voiced videos in the recording data
     const videoCheck = (async () => {
       try {
         const res = await fetch(`/api/recordings/${selectedId}`);
         const data = await res.json();
         const files = data.videos?.map(v => v.file) || [];
         return {
-          speed: files.some(f => f.includes('-speed-')),
           voiced: files.some(f => f.includes('-voiced')),
         };
-      } catch { return { speed: false, voiced: false }; }
+      } catch { return { voiced: false }; }
     })();
 
-    const [intro, outro, final, { speed, voiced }] = await Promise.all([...checks, videoCheck]);
+    const [intro, outro, final, { voiced }] = await Promise.all([...checks, videoCheck]);
     introExists = intro;
     outroExists = outro;
     finalExists = final;
-    speedExists = speed;
     voicedExists = voiced;
 
     // Show voice clips section if voiced video exists or intro/outro exist
@@ -3459,81 +3455,6 @@ Best,`;
     }
   }
 
-  // --- Make x2 speed video ---
-  async function makeSpeedVideo() {
-    if (!selectedId) { alert('Select a recording first.'); return; }
-
-    const btn = document.getElementById('btn-make-speed');
-    const status = document.getElementById('speed-status');
-    activeBtnId = 'btn-make-speed';
-    activeBtnLabel = 'Make x2 Speed Video';
-    activeAbort = new AbortController();
-    btn.textContent = 'Rendering...';
-    setActionBusy(true);
-    status.innerHTML = '<span style="color:#888">Creating x2 speed video...</span>';
-
-    try {
-      const res = await fetch(`/api/recordings/${selectedId}/speed`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ video: 'raw.webm', speed: 2 }),
-        signal: activeAbort.signal,
-      });
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const evt = JSON.parse(line.slice(6));
-          status.innerHTML = `<span style="color:${evt.type === 'error' ? '#ef4444' : evt.type === 'done' ? '#22c55e' : '#888'}">${evt.message}</span>`;
-
-          if (evt.type === 'done') {
-            btn.textContent = 'Make x2 Speed Video';
-            setActionBusy(false);
-            loadRecordings();
-            await refreshRecording(selectedId, 'raw-speed-2x.webm');
-            checkVideoStates();
-            return;
-          }
-          if (evt.type === 'error') {
-            btn.textContent = 'Make x2 Speed Video';
-            setActionBusy(false);
-            return;
-          }
-        }
-      }
-      // Process any remaining data in buffer
-      if (buffer.trim().startsWith('data: ')) {
-        const evt = JSON.parse(buffer.trim().slice(6));
-        if (evt.type === 'done') {
-          btn.textContent = 'Make x2 Speed Video';
-          setActionBusy(false);
-          loadRecordings();
-          await refreshRecording(selectedId, 'raw-speed-2x.webm');
-          checkVideoStates();
-          return;
-        }
-      }
-      // Fallthrough: stream ended without done/error event
-      btn.textContent = 'Make x2 Speed Video';
-      setActionBusy(false);
-    } catch (err) {
-      if (err.name === 'AbortError') return;
-      status.innerHTML = `<span style="color:#ef4444">Error: ${err.message}</span>`;
-      btn.textContent = 'Make x2 Speed Video';
-      setActionBusy(false);
-    }
-  }
-
   // --- Compose final video ---
   async function composeFinal() {
     if (!selectedId) { alert('Select a recording first.'); return; }
@@ -3619,10 +3540,7 @@ Best,`;
       return;
     }
 
-    // Pick best video: prefer speed-2x if it exists, otherwise raw
-    // Only videos with timeline events and not already voiced qualify
-    const videos = cachedData?.videos?.map(v => v.file) || [];
-    const video = videos.includes('raw-speed-2x.webm') ? 'raw-speed-2x.webm' : 'raw.webm';
+    const video = 'raw.webm';
 
     const btn = document.getElementById('btn-voiceover');
     const status = document.getElementById('voiceover-status');
@@ -3820,7 +3738,6 @@ Best,`;
     // Show cancelled status
     const statusMap = {
       'btn-record': 'progress-log',
-      'btn-make-speed': 'speed-status',
       'btn-intro-make': 'intro-status',
       'btn-voiceover': 'voiceover-status',
       'btn-compose': 'compose-status',
@@ -3845,7 +3762,6 @@ Best,`;
   function updateActionButtons() {
     const recordBtn = document.getElementById('btn-record');
     const simulateBtn = document.getElementById('btn-simulate');
-    const speedBtn = document.getElementById('btn-make-speed');
     const makeBtn = document.getElementById('btn-intro-make');
     const voBtn = document.getElementById('btn-voiceover');
     const compBtn = document.getElementById('btn-compose');
@@ -3858,7 +3774,7 @@ Best,`;
 
     if (actionBusy) {
       // When any action is running, disable all buttons except the active one (Cancel)
-      const allBtns = [recordBtn, simulateBtn, speedBtn, makeBtn, voBtn, compBtn, previewBtn, publishBtn, wysiwygBtn, trimBtn];
+      const allBtns = [recordBtn, simulateBtn, makeBtn, voBtn, compBtn, previewBtn, publishBtn, wysiwygBtn, trimBtn];
       for (const b of allBtns) {
         if (!b) continue;
         if (b.id === activeBtnId) {
@@ -3876,7 +3792,7 @@ Best,`;
     }
 
     // Restore active button style and onclick when no longer busy
-    const allActionBtns = [recordBtn, speedBtn, makeBtn, voBtn, compBtn];
+    const allActionBtns = [recordBtn, makeBtn, voBtn, compBtn];
     for (const b of allActionBtns) {
       if (!b) continue;
       b.style.background = '';
@@ -3888,7 +3804,6 @@ Best,`;
     // Normal enable/disable logic
     if (recordBtn) recordBtn.disabled = false;
     if (simulateBtn) simulateBtn.disabled = false;
-    if (speedBtn) speedBtn.disabled = !hasRecording;
     if (makeBtn) makeBtn.disabled = !hasRecording;
     if (voBtn) voBtn.disabled = !hasRecording;
 
@@ -3900,16 +3815,14 @@ Best,`;
     if (publishBtn) publishBtn.disabled = !finalExists;
 
     // Highlight logic: only one secondary button gets highlighted (btn-primary style)
-    const actionBtns = [speedBtn, makeBtn, voBtn, compBtn];
+    const actionBtns = [makeBtn, voBtn, compBtn];
     for (const b of actionBtns) {
       if (b) { b.className = 'btn-secondary'; }
     }
 
     let highlighted = null;
     if (hasRecording) {
-      if (!speedExists) {
-        highlighted = speedBtn;
-      } else if (!introExists || !outroExists) {
+      if (!introExists || !outroExists) {
         highlighted = makeBtn;
       } else if (!voicedExists) {
         highlighted = voBtn;

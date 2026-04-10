@@ -127,7 +127,7 @@ tsx cli.ts 536222 --no-publish
 echo '{"tenant":536222,"email":"sam@xinfer.ai"}' | tsx cli.ts
 ```
 
-Steps: 1=fetch & generate, 2=record, 3=speed, 4=intro/outro, 5=voiceover, 6=compose, 7=publish
+Steps: 1=fetch & generate, 2=record, 3=intro/outro, 4=voiceover, 5=compose, 6=publish
 
 | Option | Description |
 |--------|-------------|
@@ -137,8 +137,7 @@ Steps: 1=fetch & generate, 2=record, 3=speed, 4=intro/outro, 5=voiceover, 6=comp
 | `--widget-url <url>` | Override widget script URL (default: derived from tenant subdomain) |
 | `--queries "q1" "q2"` | Override queries (default: AI-generated, then suggested actions) |
 | `--recording <id>` | Resume an existing recording (required with `--from`) |
-| `--from <step>` | Start from step 1–7 (default: 1) |
-| `--speed <number>` | Speed multiplier (default: 2) |
+| `--from <step>` | Start from step 1–6 (default: 1) |
 | `--headed` | Show browser during recording |
 | `--no-publish` | Stop after compose, skip publish |
 | `--force` | Skip duplicate detection, always publish new version |
