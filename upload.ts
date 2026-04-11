@@ -22,6 +22,7 @@ export interface PublishOptions {
 	videoFile: string; // filename e.g. "final.webm"
 	snapshotPath?: string; // absolute path to snapshot.png (optional)
 	snapshotMobilePath?: string; // absolute path to snapshot-mobile.png (optional)
+	diagLogPath?: string; // absolute path to snapshot-diag.log (optional)
 	config?: Record<string, unknown>; // recording inputs for reproduction
 	targetUrl?: string; // target site URL for interactive demo redirect
 	widgetUrl?: string; // widget script URL (when not already on site)
@@ -134,6 +135,7 @@ export async function publishDemo(
 		videoFile,
 		snapshotPath,
 		snapshotMobilePath,
+		diagLogPath,
 		config,
 		targetUrl,
 		widgetUrl,
@@ -165,6 +167,11 @@ export async function publishDemo(
 		snapshotMobilePath && fs.existsSync(snapshotMobilePath);
 	if (hasMobileSnapshot) {
 		files.push({ name: "snapshot-mobile.png", contentType: "image/png" });
+	}
+
+	const hasDiagLog = diagLogPath && fs.existsSync(diagLogPath);
+	if (hasDiagLog) {
+		files.push({ name: "snapshot-diag.log", contentType: "text/plain" });
 	}
 
 	if (targetUrl) {
@@ -221,6 +228,16 @@ export async function publishDemo(
 			uploads["snapshot-mobile.png"].url,
 			mobileSnapBuffer,
 			"image/png",
+		);
+	}
+
+	// 2c. Upload diagnostic log if exists
+	if (hasDiagLog) {
+		const diagBuffer = fs.readFileSync(diagLogPath);
+		await uploadWithPresignedUrl(
+			uploads["snapshot-diag.log"].url,
+			diagBuffer,
+			"text/plain",
 		);
 	}
 

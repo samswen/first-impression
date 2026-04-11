@@ -69,12 +69,19 @@ async function loadPageForSnapshot(
 	page: Page,
 	url: string,
 	emit: (type: ProgressEvent["type"], message: string) => void,
+	diagDir?: string,
 ): Promise<void> {
+	// Collect diagnostic lines — written to file at end for spot instances
+	const diag: string[] = [];
+	const log = (msg: string) => {
+		diag.push(`[${new Date().toISOString()}] ${msg}`);
+		emit("progress", msg);
+	};
+
 	// Log failed image requests for diagnostics
 	page.on("requestfailed", (req) => {
 		if (req.resourceType() === "image") {
-			emit(
-				"progress",
+			log(
 				`[img-request-fail] ${req.url().slice(0, 120)} -> ${req.failure()?.errorText}`,
 			);
 		}
@@ -87,11 +94,12 @@ async function loadPageForSnapshot(
 
 	// Check for Cloudflare challenge via response header
 	const cfMitigated = navResponse?.headers()["cf-mitigated"];
+	log(`cf-mitigated: ${cfMitigated || "none"}`);
 	if (cfMitigated === "challenge") {
-		emit("progress", "Cloudflare challenge detected, attempting to solve...");
+		log("Cloudflare challenge detected, attempting to solve...");
 		const result = await solveTurnstile(page);
 		if (result.solved) {
-			emit("progress", "Cloudflare challenge solved, waiting for real page...");
+			log("Cloudflare challenge solved, waiting for real page...");
 			try {
 				await page.waitForLoadState("load", { timeout: 30_000 });
 			} catch {
@@ -103,7 +111,7 @@ async function loadPageForSnapshot(
 				// Some sites never reach networkidle
 			}
 		} else {
-			emit("progress", `Cloudflare challenge not solved: ${result.error}`);
+			log(`Cloudflare challenge not solved: ${result.error}`);
 		}
 	}
 
@@ -121,8 +129,7 @@ async function loadPageForSnapshot(
 			}));
 	});
 	for (const s of initialStatus) {
-		emit(
-			"progress",
+		log(
 			`[img-initial] ${s.ok ? "OK" : "FAIL"} ${s.size} natural=${s.natural} top=${s.top} loading=${s.loading} ${s.src}`,
 		);
 	}
@@ -148,7 +155,7 @@ async function loadPageForSnapshot(
 	});
 
 	// Scroll through the page to trigger IntersectionObserver loaders
-	emit("progress", "Scrolling page to trigger lazy-loaded content...");
+	log("Scrolling page to trigger lazy-loaded content...");
 	const scrollHeight = await page.evaluate(() => document.body.scrollHeight);
 	const viewportHeight = 1080;
 	for (let y = 0; y < scrollHeight; y += viewportHeight) {
@@ -193,7 +200,7 @@ async function loadPageForSnapshot(
 		return count;
 	});
 	if (retried > 0) {
-		emit("progress", `Retrying ${retried} failed image(s)...`);
+		log(`Retrying ${retried} failed image(s)...`);
 		await page.evaluate(() => {
 			return Promise.all(
 				Array.from(document.querySelectorAll("img"))
@@ -226,15 +233,13 @@ async function loadPageForSnapshot(
 				size: `${img.offsetWidth}x${img.offsetHeight}`,
 				natural: `${img.naturalWidth}x${img.naturalHeight}`,
 				top: Math.round(img.getBoundingClientRect().top),
+				src: img.currentSrc?.slice(0, 100) || img.src?.slice(0, 100),
 			}));
 	});
 	for (const s of finalStatus) {
-		if (!s.ok) {
-			emit(
-				"progress",
-				`[img-final] STILL FAILED ${s.size} natural=${s.natural} top=${s.top}`,
-			);
-		}
+		log(
+			`[img-final] ${s.ok ? "OK" : "FAIL"} ${s.size} natural=${s.natural} top=${s.top} ${s.src}`,
+		);
 	}
 
 	// Handle videos: pause loaded ones, replace errored/unloaded with poster
@@ -242,6 +247,7 @@ async function loadPageForSnapshot(
 		() => document.querySelectorAll("video").length,
 	);
 	if (videoCount > 0) {
+		log(`Found ${videoCount} video(s), attempting to render...`);
 		await page.evaluate(() => {
 			for (const video of document.querySelectorAll("video")) {
 				if (video.readyState < 2 && !video.error) {
@@ -291,7 +297,19 @@ async function loadPageForSnapshot(
 		});
 
 		if (fixed > 0) {
-			emit("progress", `Replaced ${fixed} errored/unloaded video(s)`);
+			log(`Replaced ${fixed} errored/unloaded video(s)`);
+		}
+	}
+
+	// Write diagnostics to file in recording directory
+	if (diagDir) {
+		try {
+			fs.writeFileSync(
+				path.join(diagDir, "snapshot-diag.log"),
+				diag.join("\n") + "\n",
+			);
+		} catch {
+			// non-fatal
 		}
 	}
 }
@@ -356,7 +374,7 @@ export class Recorder {
 					});
 					await applyStealthToContext(snapContext);
 					const snapPage = await snapContext.newPage();
-					await loadPageForSnapshot(snapPage, this.config.url, emit);
+					await loadPageForSnapshot(snapPage, this.config.url, emit, dir);
 
 					const snapshotPath = path.join(dir, "snapshot.png");
 					await snapPage.screenshot({
@@ -373,7 +391,7 @@ export class Recorder {
 					});
 					await applyStealthToContext(mobileContext);
 					const mobilePage = await mobileContext.newPage();
-					await loadPageForSnapshot(mobilePage, this.config.url, emit);
+					await loadPageForSnapshot(mobilePage, this.config.url, emit, dir);
 
 					const snapshotMobilePath = path.join(dir, "snapshot-mobile.png");
 					await mobilePage.screenshot({

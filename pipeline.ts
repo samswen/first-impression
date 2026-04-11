@@ -989,6 +989,7 @@ export async function publishRecording(
 		? JSON.parse(fs.readFileSync(configPath, "utf-8"))
 		: undefined;
 
+	const diagLogPath = path.join(dir, "snapshot-diag.log");
 	const result = await publishDemo({
 		tenantInfo,
 		tenantSlug,
@@ -998,6 +999,7 @@ export async function publishRecording(
 		snapshotMobilePath: fs.existsSync(snapshotMobilePath)
 			? snapshotMobilePath
 			: undefined,
+		diagLogPath: fs.existsSync(diagLogPath) ? diagLogPath : undefined,
 		config,
 		targetUrl: config?.url as string | undefined,
 		widgetUrl: config?.widgetUrl as string | undefined,
