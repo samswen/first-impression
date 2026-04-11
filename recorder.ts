@@ -95,7 +95,6 @@ async function loadPageForSnapshot(
 	// Force lazy-loaded images to load:
 	// 1. Convert loading="lazy" to eager
 	// 2. Copy data-src → src (common lazy-load pattern)
-	// 3. Scroll through the page to trigger IntersectionObserver-based loaders
 	await page.evaluate(() => {
 		for (const img of document.querySelectorAll("img")) {
 			if (img.loading === "lazy") img.loading = "eager";
@@ -103,7 +102,7 @@ async function loadPageForSnapshot(
 				img.getAttribute("data-src") || img.getAttribute("data-lazy");
 			if (dataSrc && !img.src) img.src = dataSrc;
 		}
-		// Also handle background images set via data attributes
+		// Handle background images set via data attributes
 		for (const el of document.querySelectorAll<HTMLElement>(
 			"[data-bg], [data-background-image]",
 		)) {
@@ -152,11 +151,59 @@ async function loadPageForSnapshot(
 	// Extra settle time for rendering
 	await page.waitForTimeout(2000);
 
+	// Diagnose the hero area — log what elements occupy the top viewport
+	const heroDiag = await page.evaluate(() => {
+		const results: string[] = [];
+		// Check the first large element below the nav (likely the hero)
+		const els = document.querySelectorAll("body *");
+		for (const el of els) {
+			const rect = (el as HTMLElement).getBoundingClientRect?.();
+			if (!rect || rect.width < 800 || rect.height < 300) continue;
+			if (rect.top > 200) continue; // only elements near top of page
+			const tag = el.tagName.toLowerCase();
+			const cls = el.className
+				? ` class="${String(el.className).slice(0, 80)}"`
+				: "";
+			const style = window.getComputedStyle(el as HTMLElement);
+			const bg = style.backgroundImage;
+			const bgColor = style.backgroundColor;
+			results.push(
+				`<${tag}${cls}> ${Math.round(rect.width)}x${Math.round(rect.height)} ` +
+					`bg-image=${bg?.slice(0, 120)} bg-color=${bgColor}`,
+			);
+		}
+		// Also count videos and their state
+		const videos = document.querySelectorAll("video");
+		for (const v of videos) {
+			const rect = v.getBoundingClientRect();
+			results.push(
+				`<video> ${Math.round(rect.width)}x${Math.round(rect.height)} ` +
+					`readyState=${v.readyState} src=${(v.src || v.currentSrc || "").slice(0, 100)} ` +
+					`poster=${v.poster?.slice(0, 100) || "none"} error=${v.error?.message || "none"}`,
+			);
+		}
+		return results;
+	});
+	for (const line of heroDiag) {
+		emit("progress", `[hero-diag] ${line}`);
+	}
+
 	// Handle videos: pause loaded ones, replace errored/unloaded with poster
 	const videoCount = await page.evaluate(
 		() => document.querySelectorAll("video").length,
 	);
 	if (videoCount > 0) {
+		// Try to get videos to render their first frame
+		await page.evaluate(() => {
+			for (const video of document.querySelectorAll("video")) {
+				if (video.readyState < 2 && !video.error) {
+					video.muted = true;
+					video.play().catch(() => {});
+				}
+			}
+		});
+		await page.waitForTimeout(3000);
+
 		const fixed = await page.evaluate(() => {
 			let count = 0;
 			for (const video of document.querySelectorAll("video")) {
@@ -185,7 +232,8 @@ async function loadPageForSnapshot(
 						}
 						video.replaceWith(img);
 					} else if (w && h) {
-						video.style.visibility = "hidden";
+						// Leave video visible — hiding it just shows the dark
+						// background behind it, which is no better
 					} else {
 						video.remove();
 					}
