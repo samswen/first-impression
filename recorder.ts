@@ -70,6 +70,16 @@ async function loadPageForSnapshot(
 	url: string,
 	emit: (type: ProgressEvent["type"], message: string) => void,
 ): Promise<void> {
+	// Log failed image requests for diagnostics
+	page.on("requestfailed", (req) => {
+		if (req.resourceType() === "image") {
+			emit(
+				"progress",
+				`[img-request-fail] ${req.url().slice(0, 120)} -> ${req.failure()?.errorText}`,
+			);
+		}
+	});
+
 	const navResponse = await page.goto(url, {
 		waitUntil: "load",
 		timeout: 60_000,
@@ -83,6 +93,11 @@ async function loadPageForSnapshot(
 		if (result.solved) {
 			emit("progress", "Cloudflare challenge solved, waiting for real page...");
 			try {
+				await page.waitForLoadState("load", { timeout: 30_000 });
+			} catch {
+				// timeout
+			}
+			try {
 				await page.waitForLoadState("networkidle", { timeout: 10_000 });
 			} catch {
 				// Some sites never reach networkidle
@@ -92,9 +107,27 @@ async function loadPageForSnapshot(
 		}
 	}
 
-	// Force lazy-loaded images to load:
-	// 1. Convert loading="lazy" to eager
-	// 2. Copy data-src → src (common lazy-load pattern)
+	// Log initial image status (before any modifications)
+	const initialStatus = await page.evaluate(() => {
+		return Array.from(document.querySelectorAll("img"))
+			.filter((img) => img.offsetWidth > 200 || img.offsetHeight > 200)
+			.map((img) => ({
+				ok: img.complete && img.naturalWidth > 0,
+				size: `${img.offsetWidth}x${img.offsetHeight}`,
+				natural: `${img.naturalWidth}x${img.naturalHeight}`,
+				top: Math.round(img.getBoundingClientRect().top),
+				loading: img.loading,
+				src: img.currentSrc?.slice(0, 100) || img.src?.slice(0, 100),
+			}));
+	});
+	for (const s of initialStatus) {
+		emit(
+			"progress",
+			`[img-initial] ${s.ok ? "OK" : "FAIL"} ${s.size} natural=${s.natural} top=${s.top} loading=${s.loading} ${s.src}`,
+		);
+	}
+
+	// Force lazy-loaded images to load
 	await page.evaluate(() => {
 		for (const img of document.querySelectorAll("img")) {
 			if (img.loading === "lazy") img.loading = "eager";
@@ -102,7 +135,6 @@ async function loadPageForSnapshot(
 				img.getAttribute("data-src") || img.getAttribute("data-lazy");
 			if (dataSrc && !img.src) img.src = dataSrc;
 		}
-		// Handle background images set via data attributes
 		for (const el of document.querySelectorAll<HTMLElement>(
 			"[data-bg], [data-background-image]",
 		)) {
@@ -115,7 +147,7 @@ async function loadPageForSnapshot(
 		}
 	});
 
-	// Scroll through the full page to trigger IntersectionObserver loaders
+	// Scroll through the page to trigger IntersectionObserver loaders
 	emit("progress", "Scrolling page to trigger lazy-loaded content...");
 	const scrollHeight = await page.evaluate(() => document.body.scrollHeight);
 	const viewportHeight = 1080;
@@ -123,21 +155,19 @@ async function loadPageForSnapshot(
 		await page.evaluate((top) => window.scrollTo(0, top), y);
 		await page.waitForTimeout(300);
 	}
-	// Scroll back to top
 	await page.evaluate(() => window.scrollTo(0, 0));
 
-	// Wait for network to settle (images triggered by scroll)
+	// Wait for network to settle
 	try {
 		await page.waitForLoadState("networkidle", { timeout: 10_000 });
 	} catch {
-		// Some sites never reach networkidle — continue
+		// Some sites never reach networkidle
 	}
 
-	// Wait for all in-flight images to finish loading
+	// Wait for all images to finish loading
 	await page.evaluate(() => {
-		const imgs = Array.from(document.querySelectorAll("img"));
 		return Promise.all(
-			imgs.map((img) => {
+			Array.from(document.querySelectorAll("img")).map((img) => {
 				if (img.complete) return Promise.resolve();
 				return new Promise<void>((resolve) => {
 					img.addEventListener("load", () => resolve(), { once: true });
@@ -148,44 +178,63 @@ async function loadPageForSnapshot(
 		);
 	});
 
-	// Extra settle time for rendering
+	// Retry failed images: detect naturalWidth === 0 and reload
+	const retried = await page.evaluate(() => {
+		let count = 0;
+		for (const img of document.querySelectorAll("img")) {
+			if (img.complete && img.naturalWidth === 0 && img.src) {
+				const src = img.src;
+				img.removeAttribute("srcset");
+				img.src = "";
+				img.src = src;
+				count++;
+			}
+		}
+		return count;
+	});
+	if (retried > 0) {
+		emit("progress", `Retrying ${retried} failed image(s)...`);
+		await page.evaluate(() => {
+			return Promise.all(
+				Array.from(document.querySelectorAll("img"))
+					.filter((img) => !img.complete || img.naturalWidth === 0)
+					.map(
+						(img) =>
+							new Promise<void>((resolve) => {
+								img.addEventListener("load", () => resolve(), {
+									once: true,
+								});
+								img.addEventListener("error", () => resolve(), {
+									once: true,
+								});
+								setTimeout(() => resolve(), 10_000);
+							}),
+					),
+			);
+		});
+	}
+
+	// Final settle time
 	await page.waitForTimeout(2000);
 
-	// Diagnose the hero area — log what elements occupy the top viewport
-	const heroDiag = await page.evaluate(() => {
-		const results: string[] = [];
-		// Check the first large element below the nav (likely the hero)
-		const els = document.querySelectorAll("body *");
-		for (const el of els) {
-			const rect = (el as HTMLElement).getBoundingClientRect?.();
-			if (!rect || rect.width < 800 || rect.height < 300) continue;
-			if (rect.top > 200) continue; // only elements near top of page
-			const tag = el.tagName.toLowerCase();
-			const cls = el.className
-				? ` class="${String(el.className).slice(0, 80)}"`
-				: "";
-			const style = window.getComputedStyle(el as HTMLElement);
-			const bg = style.backgroundImage;
-			const bgColor = style.backgroundColor;
-			results.push(
-				`<${tag}${cls}> ${Math.round(rect.width)}x${Math.round(rect.height)} ` +
-					`bg-image=${bg?.slice(0, 120)} bg-color=${bgColor}`,
-			);
-		}
-		// Also count videos and their state
-		const videos = document.querySelectorAll("video");
-		for (const v of videos) {
-			const rect = v.getBoundingClientRect();
-			results.push(
-				`<video> ${Math.round(rect.width)}x${Math.round(rect.height)} ` +
-					`readyState=${v.readyState} src=${(v.src || v.currentSrc || "").slice(0, 100)} ` +
-					`poster=${v.poster?.slice(0, 100) || "none"} error=${v.error?.message || "none"}`,
-			);
-		}
-		return results;
+	// Log final image status
+	const finalStatus = await page.evaluate(() => {
+		return Array.from(document.querySelectorAll("img"))
+			.filter((img) => img.offsetWidth > 200 || img.offsetHeight > 200)
+			.map((img) => ({
+				ok: img.complete && img.naturalWidth > 0,
+				size: `${img.offsetWidth}x${img.offsetHeight}`,
+				natural: `${img.naturalWidth}x${img.naturalHeight}`,
+				top: Math.round(img.getBoundingClientRect().top),
+			}));
 	});
-	for (const line of heroDiag) {
-		emit("progress", `[hero-diag] ${line}`);
+	for (const s of finalStatus) {
+		if (!s.ok) {
+			emit(
+				"progress",
+				`[img-final] STILL FAILED ${s.size} natural=${s.natural} top=${s.top}`,
+			);
+		}
 	}
 
 	// Handle videos: pause loaded ones, replace errored/unloaded with poster
@@ -193,7 +242,6 @@ async function loadPageForSnapshot(
 		() => document.querySelectorAll("video").length,
 	);
 	if (videoCount > 0) {
-		// Try to get videos to render their first frame
 		await page.evaluate(() => {
 			for (const video of document.querySelectorAll("video")) {
 				if (video.readyState < 2 && !video.error) {
@@ -207,10 +255,9 @@ async function loadPageForSnapshot(
 		const fixed = await page.evaluate(() => {
 			let count = 0;
 			for (const video of document.querySelectorAll("video")) {
-				const w = video.offsetWidth;
-				const h = video.offsetHeight;
-
 				if (video.error || video.readyState < 2) {
+					const w = video.offsetWidth;
+					const h = video.offsetHeight;
 					if (video.poster) {
 						const img = document.createElement("img");
 						img.src = video.poster;
@@ -231,10 +278,7 @@ async function loadPageForSnapshot(
 							img.style.zIndex = style.zIndex;
 						}
 						video.replaceWith(img);
-					} else if (w && h) {
-						// Leave video visible — hiding it just shows the dark
-						// background behind it, which is no better
-					} else {
+					} else if (!w || !h) {
 						video.remove();
 					}
 					count++;
