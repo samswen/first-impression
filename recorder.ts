@@ -60,62 +60,20 @@ export interface RecordingResult {
 	timeline: TimelineEntry[];
 }
 
-/** Pattern matching media file URLs to block during snapshot. */
-const MEDIA_URL_PATTERN =
-	/\.(mp4|webm|ogg|ogv|m3u8|ts|m4s|mpd|avi|mov|flv|wmv)(\?|#|$)/i;
-
 /**
- * Extract the first frame of a video URL as a JPEG data URI using ffmpeg.
- * Returns null if extraction fails.
- */
-async function extractFirstFrame(videoUrl: string): Promise<string | null> {
-	const tmpFile = path.join(
-		__dirname,
-		`tmp-frame-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`,
-	);
-	try {
-		await execP(
-			"ffmpeg",
-			["-i", videoUrl, "-frames:v", "1", "-q:v", "2", "-y", tmpFile],
-			{ timeout: 15_000 },
-		);
-		if (fs.existsSync(tmpFile) && fs.statSync(tmpFile).size > 0) {
-			const buf = fs.readFileSync(tmpFile);
-			return `data:image/jpeg;base64,${buf.toString("base64")}`;
-		}
-		return null;
-	} catch {
-		return null;
-	} finally {
-		if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
-	}
-}
-
-/**
- * Load a page for snapshotting. Blocks media requests at the network level
- * so the browser never shows "media could not be loaded" error chrome.
- * Collects blocked media URLs, extracts first frames with ffmpeg, and
- * replaces <video> elements with the extracted frame images.
+ * Load a page for snapshotting. Forces all lazy-loaded images to load,
+ * scrolls the page to trigger IntersectionObserver-based loading, and
+ * handles videos gracefully (pause for clean frame or replace with poster).
  */
 async function loadPageForSnapshot(
 	page: Page,
 	url: string,
 	emit: (type: ProgressEvent["type"], message: string) => void,
 ): Promise<void> {
-	// Collect unique media URLs while blocking them
-	const blockedUrls = new Set<string>();
-	const routeMatcher = (reqUrl: URL) => MEDIA_URL_PATTERN.test(reqUrl.pathname);
-
-	await page.route(routeMatcher, (route) => {
-		blockedUrls.add(route.request().url());
-		route.abort();
-	});
-
 	const navResponse = await page.goto(url, {
 		waitUntil: "load",
 		timeout: 60_000,
 	});
-	await page.waitForTimeout(3000);
 
 	// Check for Cloudflare challenge via response header
 	const cfMitigated = navResponse?.headers()["cf-mitigated"];
@@ -134,65 +92,116 @@ async function loadPageForSnapshot(
 		}
 	}
 
-	// Extract first frame from each blocked video URL
-	const frameMap: Record<string, string> = {};
-	if (blockedUrls.size > 0) {
-		emit(
-			"progress",
-			`Extracting first frame from ${blockedUrls.size} blocked video(s)...`,
-		);
-		for (const mediaUrl of blockedUrls) {
-			const dataUri = await extractFirstFrame(mediaUrl);
-			if (dataUri) {
-				frameMap[mediaUrl] = dataUri;
+	// Force lazy-loaded images to load:
+	// 1. Convert loading="lazy" to eager
+	// 2. Copy data-src → src (common lazy-load pattern)
+	// 3. Scroll through the page to trigger IntersectionObserver-based loaders
+	await page.evaluate(() => {
+		for (const img of document.querySelectorAll("img")) {
+			if (img.loading === "lazy") img.loading = "eager";
+			const dataSrc =
+				img.getAttribute("data-src") || img.getAttribute("data-lazy");
+			if (dataSrc && !img.src) img.src = dataSrc;
+		}
+		// Also handle background images set via data attributes
+		for (const el of document.querySelectorAll<HTMLElement>(
+			"[data-bg], [data-background-image]",
+		)) {
+			const bg =
+				el.getAttribute("data-bg") ||
+				el.getAttribute("data-background-image");
+			if (bg && !el.style.backgroundImage) {
+				el.style.backgroundImage = `url("${bg}")`;
 			}
 		}
-		emit(
-			"progress",
-			`Extracted ${Object.keys(frameMap).length}/${blockedUrls.size} video frame(s)`,
+	});
+
+	// Scroll through the full page to trigger IntersectionObserver loaders
+	emit("progress", "Scrolling page to trigger lazy-loaded content...");
+	const scrollHeight = await page.evaluate(() => document.body.scrollHeight);
+	const viewportHeight = 1080;
+	for (let y = 0; y < scrollHeight; y += viewportHeight) {
+		await page.evaluate((top) => window.scrollTo(0, top), y);
+		await page.waitForTimeout(300);
+	}
+	// Scroll back to top
+	await page.evaluate(() => window.scrollTo(0, 0));
+
+	// Wait for network to settle (images triggered by scroll)
+	try {
+		await page.waitForLoadState("networkidle", { timeout: 10_000 });
+	} catch {
+		// Some sites never reach networkidle — continue
+	}
+
+	// Wait for all in-flight images to finish loading
+	await page.evaluate(() => {
+		const imgs = Array.from(document.querySelectorAll("img"));
+		return Promise.all(
+			imgs.map((img) => {
+				if (img.complete) return Promise.resolve();
+				return new Promise<void>((resolve) => {
+					img.addEventListener("load", () => resolve(), { once: true });
+					img.addEventListener("error", () => resolve(), { once: true });
+					setTimeout(() => resolve(), 10_000);
+				});
+			}),
 		);
-	}
+	});
 
-	// Collect video src URLs from the DOM, then replace elements
-	const fixed = await page.evaluate((frames: Record<string, string>) => {
-		let count = 0;
-		for (const video of document.querySelectorAll("video")) {
-			const src =
-				video.src ||
-				video.currentSrc ||
-				video.querySelector("source")?.src ||
-				"";
-			const dataUri = frames[src] || video.poster;
-			const w = video.offsetWidth;
-			const h = video.offsetHeight;
+	// Extra settle time for rendering
+	await page.waitForTimeout(2000);
 
-			if (dataUri) {
-				const img = document.createElement("img");
-				img.src = dataUri;
-				img.style.width = w ? `${w}px` : "100%";
-				img.style.height = h ? `${h}px` : "auto";
-				img.style.objectFit = "cover";
-				img.style.display = "block";
-				video.replaceWith(img);
-			} else if (w && h) {
-				const div = document.createElement("div");
-				div.style.width = `${w}px`;
-				div.style.height = `${h}px`;
-				div.style.background = "#000";
-				video.replaceWith(div);
-			} else {
-				video.remove();
+	// Handle videos: pause loaded ones, replace errored/unloaded with poster
+	const videoCount = await page.evaluate(
+		() => document.querySelectorAll("video").length,
+	);
+	if (videoCount > 0) {
+		const fixed = await page.evaluate(() => {
+			let count = 0;
+			for (const video of document.querySelectorAll("video")) {
+				const w = video.offsetWidth;
+				const h = video.offsetHeight;
+
+				if (video.error || video.readyState < 2) {
+					if (video.poster) {
+						const img = document.createElement("img");
+						img.src = video.poster;
+						img.style.width = w ? `${w}px` : "100%";
+						img.style.height = h ? `${h}px` : "auto";
+						img.style.objectFit = "cover";
+						img.style.display = "block";
+						const style = window.getComputedStyle(video);
+						if (
+							style.position === "absolute" ||
+							style.position === "fixed"
+						) {
+							img.style.position = style.position;
+							img.style.top = style.top;
+							img.style.left = style.left;
+							img.style.right = style.right;
+							img.style.bottom = style.bottom;
+							img.style.zIndex = style.zIndex;
+						}
+						video.replaceWith(img);
+					} else if (w && h) {
+						video.style.visibility = "hidden";
+					} else {
+						video.remove();
+					}
+					count++;
+				} else {
+					video.pause();
+					video.controls = false;
+				}
 			}
-			count++;
+			return count;
+		});
+
+		if (fixed > 0) {
+			emit("progress", `Replaced ${fixed} errored/unloaded video(s)`);
 		}
-		return count;
-	}, frameMap);
-
-	if (fixed > 0) {
-		emit("progress", `Replaced ${fixed} video element(s) in snapshot`);
 	}
-
-	await page.unroute(routeMatcher);
 }
 
 export class Recorder {
