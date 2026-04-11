@@ -70,6 +70,7 @@ async function loadPageForSnapshot(
 	url: string,
 	emit: (type: ProgressEvent["type"], message: string) => void,
 	diagDir?: string,
+	diagFile = "snapshot-diag.log",
 ): Promise<void> {
 	// Collect diagnostic lines — written to file at end for spot instances
 	const diag: string[] = [];
@@ -305,7 +306,7 @@ async function loadPageForSnapshot(
 	if (diagDir) {
 		try {
 			fs.writeFileSync(
-				path.join(diagDir, "snapshot-diag.log"),
+				path.join(diagDir, diagFile),
 				diag.join("\n") + "\n",
 			);
 		} catch {
@@ -374,7 +375,7 @@ export class Recorder {
 					});
 					await applyStealthToContext(snapContext);
 					const snapPage = await snapContext.newPage();
-					await loadPageForSnapshot(snapPage, this.config.url, emit, dir);
+					await loadPageForSnapshot(snapPage, this.config.url, emit, dir, "snapshot-diag.log");
 
 					const snapshotPath = path.join(dir, "snapshot.png");
 					await snapPage.screenshot({
@@ -391,7 +392,7 @@ export class Recorder {
 					});
 					await applyStealthToContext(mobileContext);
 					const mobilePage = await mobileContext.newPage();
-					await loadPageForSnapshot(mobilePage, this.config.url, emit, dir);
+					await loadPageForSnapshot(mobilePage, this.config.url, emit, dir, "snapshot-mobile-diag.log");
 
 					const snapshotMobilePath = path.join(dir, "snapshot-mobile.png");
 					await mobilePage.screenshot({
