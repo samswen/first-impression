@@ -71,7 +71,7 @@ async function loadPageForSnapshot(
 	emit: (type: ProgressEvent["type"], message: string) => void,
 	diagDir?: string,
 	diagFile = "snapshot-diag.log",
-): Promise<void> {
+): Promise<{ totalImages: number; loadedImages: number }> {
 	// Collect diagnostic lines — written to file at end for spot instances
 	const diag: string[] = [];
 	const log = (msg: string) => {
@@ -186,22 +186,63 @@ async function loadPageForSnapshot(
 		);
 	});
 
-	// Retry failed images: detect naturalWidth === 0 and reload
-	const retried = await page.evaluate(() => {
-		let count = 0;
-		for (const img of document.querySelectorAll("img")) {
-			if (img.complete && img.naturalWidth === 0 && img.src) {
-				const src = img.src;
-				img.removeAttribute("srcset");
-				img.src = "";
-				img.src = src;
-				count++;
-			}
+	// Multi-round retry for failed images
+	for (let round = 1; round <= 3; round++) {
+		const failed = await page.evaluate(() => {
+			return Array.from(document.querySelectorAll("img"))
+				.filter((img) => img.complete && img.naturalWidth === 0 && img.src)
+				.map((img) => img.src.slice(0, 120));
+		});
+		if (failed.length === 0) break;
+
+		log(`[img-retry] round ${round}: ${failed.length} failed image(s)`);
+		for (const src of failed.slice(0, 5)) {
+			log(`[img-retry]   ${src}`);
 		}
-		return count;
-	});
-	if (retried > 0) {
-		log(`Retrying ${retried} failed image(s)...`);
+
+		if (round === 1) {
+			// Strip srcset and reload src
+			await page.evaluate(() => {
+				for (const img of document.querySelectorAll("img")) {
+					if (img.complete && img.naturalWidth === 0 && img.src) {
+						const src = img.src;
+						img.removeAttribute("srcset");
+						img.src = "";
+						img.src = src;
+					}
+				}
+			});
+		} else if (round === 2) {
+			// Replace <img> element entirely (fresh element, no cached error state)
+			await page.evaluate(() => {
+				for (const img of document.querySelectorAll("img")) {
+					if (img.complete && img.naturalWidth === 0 && img.src) {
+						const fresh = document.createElement("img");
+						for (const attr of img.attributes) {
+							if (attr.name !== "srcset") {
+								fresh.setAttribute(attr.name, attr.value);
+							}
+						}
+						fresh.style.cssText = img.style.cssText;
+						img.replaceWith(fresh);
+					}
+				}
+			});
+		} else {
+			// Add cache-buster query param to src URL
+			await page.evaluate(() => {
+				for (const img of document.querySelectorAll("img")) {
+					if (img.complete && img.naturalWidth === 0 && img.src) {
+						const url = new URL(img.src);
+						url.searchParams.set("_cb", Date.now().toString());
+						img.removeAttribute("srcset");
+						img.src = url.toString();
+					}
+				}
+			});
+		}
+
+		// Wait for retried images to settle
 		await page.evaluate(() => {
 			return Promise.all(
 				Array.from(document.querySelectorAll("img"))
@@ -257,7 +298,28 @@ async function loadPageForSnapshot(
 				}
 			}
 		});
-		await page.waitForTimeout(3000);
+		await page.waitForTimeout(5000);
+
+		// Retry videos still buffering: reload + play again
+		const needsRetry = await page.evaluate(
+			() =>
+				Array.from(document.querySelectorAll("video")).filter(
+					(v) => !v.error && v.readyState < 2,
+				).length,
+		);
+		if (needsRetry > 0) {
+			log(`[video-retry] ${needsRetry} video(s) still buffering, retrying...`);
+			await page.evaluate(() => {
+				for (const video of document.querySelectorAll("video")) {
+					if (!video.error && video.readyState < 2) {
+						video.load();
+						video.muted = true;
+						video.play().catch(() => {});
+					}
+				}
+			});
+			await page.waitForTimeout(5000);
+		}
 
 		const fixed = await page.evaluate(() => {
 			let count = 0;
@@ -302,6 +364,21 @@ async function loadPageForSnapshot(
 		}
 	}
 
+	// Compute image load stats (only significant images, >200px in any dimension)
+	const imageStats = await page.evaluate(() => {
+		const imgs = Array.from(document.querySelectorAll("img")).filter(
+			(img) => img.offsetWidth > 200 || img.offsetHeight > 200,
+		);
+		return {
+			totalImages: imgs.length,
+			loadedImages: imgs.filter((img) => img.complete && img.naturalWidth > 0)
+				.length,
+		};
+	});
+	log(
+		`[img-stats] ${imageStats.loadedImages}/${imageStats.totalImages} significant images loaded`,
+	);
+
 	// Write diagnostics to file in recording directory
 	if (diagDir) {
 		try {
@@ -313,6 +390,8 @@ async function loadPageForSnapshot(
 			// non-fatal
 		}
 	}
+
+	return imageStats;
 }
 
 export class Recorder {
@@ -356,9 +435,14 @@ export class Recorder {
 			emit("progress", `Taking snapshot of ${this.config.url}...`);
 
 			// Use a separate browser for the snapshot (no recording)
-			// Retry once on failure (network/proxy can be flaky)
+			// Retry up to 3 times on failure or degraded image quality
 			let snapshotOk = false;
-			for (let attempt = 1; attempt <= 2 && !snapshotOk; attempt++) {
+			const maxSnapshotAttempts = 3;
+			for (
+				let attempt = 1;
+				attempt <= maxSnapshotAttempts && !snapshotOk;
+				attempt++
+			) {
 				if (attempt > 1) {
 					emit("progress", `Snapshot retry (attempt ${attempt})...`);
 				}
@@ -375,7 +459,7 @@ export class Recorder {
 					});
 					await applyStealthToContext(snapContext);
 					const snapPage = await snapContext.newPage();
-					await loadPageForSnapshot(snapPage, this.config.url, emit, dir, "snapshot-diag.log");
+					const desktopStats = await loadPageForSnapshot(snapPage, this.config.url, emit, dir, "snapshot-diag.log");
 
 					const snapshotPath = path.join(dir, "snapshot.png");
 					await snapPage.screenshot({
@@ -392,7 +476,7 @@ export class Recorder {
 					});
 					await applyStealthToContext(mobileContext);
 					const mobilePage = await mobileContext.newPage();
-					await loadPageForSnapshot(mobilePage, this.config.url, emit, dir, "snapshot-mobile-diag.log");
+					const mobileStats = await loadPageForSnapshot(mobilePage, this.config.url, emit, dir, "snapshot-mobile-diag.log");
 
 					const snapshotMobilePath = path.join(dir, "snapshot-mobile.png");
 					await mobilePage.screenshot({
@@ -400,13 +484,31 @@ export class Recorder {
 						fullPage: false,
 					});
 					await mobileContext.close();
-					snapshotOk = true;
+
+					// Check image load quality — retry if less than half loaded
+					const { totalImages, loadedImages } = desktopStats;
+					const ratio =
+						totalImages === 0 ? 1 : loadedImages / totalImages;
+					if (ratio < 0.5 && attempt < maxSnapshotAttempts) {
+						emit(
+							"progress",
+							`Only ${loadedImages}/${totalImages} images loaded (${Math.round(ratio * 100)}%), retrying...`,
+						);
+					} else {
+						if (ratio < 0.5) {
+							emit(
+								"progress",
+								`Accepting snapshot with ${loadedImages}/${totalImages} images after ${attempt} attempts`,
+							);
+						}
+						snapshotOk = true;
+					}
 				} catch (snapErr) {
 					const msg =
 						snapErr instanceof Error ? snapErr.message : String(snapErr);
 					emit(
 						"progress",
-						`Could not reach ${this.config.url} (${msg})${attempt < 2 ? ", retrying..." : ""}`,
+						`Could not reach ${this.config.url} (${msg})${attempt < maxSnapshotAttempts ? ", retrying..." : ""}`,
 					);
 				}
 
