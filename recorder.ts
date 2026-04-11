@@ -147,8 +147,7 @@ async function loadPageForSnapshot(
 			"[data-bg], [data-background-image]",
 		)) {
 			const bg =
-				el.getAttribute("data-bg") ||
-				el.getAttribute("data-background-image");
+				el.getAttribute("data-bg") || el.getAttribute("data-background-image");
 			if (bg && !el.style.backgroundImage) {
 				el.style.backgroundImage = `url("${bg}")`;
 			}
@@ -335,10 +334,7 @@ async function loadPageForSnapshot(
 						img.style.objectFit = "cover";
 						img.style.display = "block";
 						const style = window.getComputedStyle(video);
-						if (
-							style.position === "absolute" ||
-							style.position === "fixed"
-						) {
+						if (style.position === "absolute" || style.position === "fixed") {
 							img.style.position = style.position;
 							img.style.top = style.top;
 							img.style.left = style.left;
@@ -382,10 +378,7 @@ async function loadPageForSnapshot(
 	// Write diagnostics to file in recording directory
 	if (diagDir) {
 		try {
-			fs.writeFileSync(
-				path.join(diagDir, diagFile),
-				diag.join("\n") + "\n",
-			);
+			fs.writeFileSync(path.join(diagDir, diagFile), diag.join("\n") + "\n");
 		} catch {
 			// non-fatal
 		}
@@ -459,7 +452,13 @@ export class Recorder {
 					});
 					await applyStealthToContext(snapContext);
 					const snapPage = await snapContext.newPage();
-					const desktopStats = await loadPageForSnapshot(snapPage, this.config.url, emit, dir, "snapshot-diag.log");
+					const desktopStats = await loadPageForSnapshot(
+						snapPage,
+						this.config.url,
+						emit,
+						dir,
+						"snapshot-diag.log",
+					);
 
 					const snapshotPath = path.join(dir, "snapshot.png");
 					await snapPage.screenshot({
@@ -476,7 +475,13 @@ export class Recorder {
 					});
 					await applyStealthToContext(mobileContext);
 					const mobilePage = await mobileContext.newPage();
-					const mobileStats = await loadPageForSnapshot(mobilePage, this.config.url, emit, dir, "snapshot-mobile-diag.log");
+					const mobileStats = await loadPageForSnapshot(
+						mobilePage,
+						this.config.url,
+						emit,
+						dir,
+						"snapshot-mobile-diag.log",
+					);
 
 					const snapshotMobilePath = path.join(dir, "snapshot-mobile.png");
 					await mobilePage.screenshot({
@@ -487,8 +492,7 @@ export class Recorder {
 
 					// Check image load quality — retry if less than half loaded
 					const { totalImages, loadedImages } = desktopStats;
-					const ratio =
-						totalImages === 0 ? 1 : loadedImages / totalImages;
+					const ratio = totalImages === 0 ? 1 : loadedImages / totalImages;
 					if (ratio < 0.5 && attempt < maxSnapshotAttempts) {
 						emit(
 							"progress",

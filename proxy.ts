@@ -67,9 +67,7 @@ async function fetchBypassDomains(): Promise<string[]> {
 		if (res.ok) {
 			const data = await res.json();
 			bypassDomains = (data.domains as string[]) ?? [];
-			console.log(
-				`[Proxy] Loaded bypass domains: ${bypassDomains.join(", ")}`,
-			);
+			console.log(`[Proxy] Loaded bypass domains: ${bypassDomains.join(", ")}`);
 		} else {
 			console.warn(`[Proxy] Failed to fetch bypass domains: ${res.status}`);
 			bypassDomains = [];
