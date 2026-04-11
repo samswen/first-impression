@@ -15,6 +15,67 @@ import {
 } from "./demo-page";
 import type { TenantInfo } from "./tenant";
 
+function escapeHtml(str: string): string {
+	return str
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;");
+}
+
+function buildEmailTemplateHtml(
+	businessName: string,
+	assistantName: string,
+	demoUrl: string,
+): string {
+	const subject = `Your Personalized AI Assistant Demo \u2014 ${businessName}`;
+	const body = `Hi,
+
+I put together a personalized demo showing how an AI assistant can work on ${businessName}'s website \u2014 answering customer questions, guiding them through products, and driving conversions in real time.
+
+Take a look here: ${demoUrl}
+
+The demo was recorded live on your site, so you'll see exactly how ${assistantName} interacts with your customers and products.
+
+Would love to hear your thoughts \u2014 happy to walk you through it or answer any questions.
+
+Best,`;
+
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Email Template \u2014 ${escapeHtml(businessName)}</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 640px; margin: 0 auto; padding: 40px 20px; color: #111; }
+.section { margin: 28px 0; }
+.label { color: #6366f1; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; font-weight: 600; }
+.box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+pre { white-space: pre-wrap; margin: 0; font-family: inherit; font-size: 14px; line-height: 1.6; color: #374151; }
+.subject { font-weight: 600; margin-bottom: 8px; }
+hr { border: none; border-top: 1px solid #e5e7eb; margin: 12px 0; }
+</style>
+</head>
+<body>
+<h2>Email Template</h2>
+<p style="color:#555;">Ready-to-send outreach email for <strong>${escapeHtml(businessName)}</strong>.</p>
+<div class="section">
+<div class="label">Subject</div>
+<div class="box"><div class="subject">${escapeHtml(subject)}</div></div>
+</div>
+<div class="section">
+<div class="label">Body</div>
+<div class="box"><pre>${escapeHtml(body)}</pre></div>
+</div>
+</body>
+</html>`;
+}
+
+function buildSmsTemplateText(businessName: string, demoUrl: string): string {
+	return `Hi! I made a quick AI assistant demo for ${businessName} \u2014 see it in action here: ${demoUrl}`;
+}
+
 export interface PublishOptions {
 	tenantInfo: TenantInfo;
 	tenantSlug: string;
@@ -178,6 +239,11 @@ export async function publishDemo(
 		files.push({ name: "demo.html", contentType: "text/html; charset=utf-8" });
 	}
 
+	files.push(
+		{ name: "email-template.html", contentType: "text/html; charset=utf-8" },
+		{ name: "sms-template.txt", contentType: "text/plain; charset=utf-8" },
+	);
+
 	// Build tenant snapshot — include generated content for future improvements
 	const tenantSnapshot: Record<string, unknown> = {
 		...(tenantInfo as unknown as Record<string, unknown>),
@@ -325,7 +391,26 @@ export async function publishDemo(
 		);
 	}
 
-	// 6. Upload directory key (same HTML, for bare /demo/slug/vN access)
+	// 6. Generate and upload email + SMS template files
+	const bizName =
+		tenantInfo.setup?.businessName || tenantInfo.app?.title || "Your Business";
+	const asstName =
+		tenantInfo.setup?.assistantName || tenantInfo.app?.title || "AI Assistant";
+	const emailTemplateHtml = buildEmailTemplateHtml(bizName, asstName, baseUrl);
+	await uploadWithPresignedUrl(
+		uploads["email-template.html"].url,
+		emailTemplateHtml,
+		"text/html; charset=utf-8",
+	);
+
+	const smsTemplateText = buildSmsTemplateText(bizName, baseUrl);
+	await uploadWithPresignedUrl(
+		uploads["sms-template.txt"].url,
+		smsTemplateText,
+		"text/plain; charset=utf-8",
+	);
+
+	// 7. Upload directory key (same HTML, for bare /demo/slug/vN access)
 	if (uploads.__dir__) {
 		await uploadWithPresignedUrl(
 			uploads.__dir__.url,

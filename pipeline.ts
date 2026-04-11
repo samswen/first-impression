@@ -1044,6 +1044,11 @@ export async function publishRecording(
 				demoUrl: publishResult.url,
 				tagline: publishResult.tagline,
 				inventoryDescription: publishResult.inventoryDescription,
+				userEmail: outreachEmail,
+				tenantId,
+				adminUrl: tenantInfo.subdomain
+					? `https://${tenantInfo.subdomain}.xinfer.ai/admin`
+					: undefined,
 			}),
 		})
 			.then((r) => {
