@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -249,6 +250,21 @@ async function run() {
 		}
 	} else {
 		dir = ""; // set in step 1
+	}
+
+	// ── Git version ─────────────────────────────────────────────────
+	try {
+		const gitHash = execSync("git rev-parse --short HEAD", {
+			cwd: __dirname,
+			encoding: "utf-8",
+		}).trim();
+		const gitDate = execSync("git log -1 --format=%ci", {
+			cwd: __dirname,
+			encoding: "utf-8",
+		}).trim();
+		console.log(`[version] ${gitHash} (${gitDate})`);
+	} catch {
+		console.log("[version] unknown");
 	}
 
 	// ── [1/6] Fetch tenant info & generate AI content ──────────────
