@@ -208,15 +208,15 @@ export async function addVoiceover(
 	);
 
 	// Build segments for the narration API
-	// Use 85% of real event duration to give TTS timing headroom.
+	// Use 75% of real event duration to give TTS timing headroom.
 	const segments: NarrationSegment[] = narratableEvents.map((e) => ({
 		action: e.action,
 		query: e.action.startsWith("query-") ? e.label : undefined,
 		response: e.response?.slice(0, 500),
-		availableDuration: (e.endTime - e.startTime) * 0.85,
+		availableDuration: (e.endTime - e.startTime) * 0.75,
 	}));
 
-	onProgress?.("Narration budgets (85% of event duration):");
+	onProgress?.("Narration budgets (75% of event duration):");
 	for (let i = 0; i < segments.length; i++) {
 		const seg = segments[i];
 		const evt = narratableEvents[i];
@@ -278,7 +278,7 @@ export async function addVoiceover(
 			: event.startTime;
 
 		const evtDur = event.endTime - event.startTime;
-		const budget = evtDur * 0.85;
+		const budget = evtDur * 0.75;
 		const overUnder = duration - budget;
 		onProgress?.(
 			`  Clip ${i + 1}: TTS=${duration.toFixed(1)}s, budget=${budget.toFixed(1)}s${overUnder > 0 ? ` OVER +${overUnder.toFixed(1)}s` : ` ok ${overUnder.toFixed(1)}s`}, ` +
