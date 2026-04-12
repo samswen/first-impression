@@ -298,8 +298,10 @@ export async function addVoiceover(
 		throw new Error("No narration clips generated");
 	}
 
-	// Adjust start times to prevent overlap — if a clip would start before
-	// the previous one finishes, delay it so there's no audio collision.
+	// Adjust start times: prevent overlap AND close excessive gaps.
+	// If a clip overlaps the previous, delay it. If there's more than 2s
+	// of dead air, pull it forward — the narrator leads the action rather
+	// than leaving the viewer in silence.
 	for (let i = 1; i < clips.length; i++) {
 		const prevEnd = clips[i - 1].startTime + clips[i - 1].duration;
 		if (clips[i].startTime < prevEnd) {
@@ -308,6 +310,12 @@ export async function addVoiceover(
 				`Clip ${i + 1} delayed by ${delay.toFixed(1)}s to avoid overlap`,
 			);
 			clips[i].startTime = prevEnd;
+		} else if (clips[i].startTime - prevEnd > 2) {
+			const pulled = clips[i].startTime - (prevEnd + 1);
+			onProgress?.(
+				`Clip ${i + 1} pulled forward by ${pulled.toFixed(1)}s to close gap`,
+			);
+			clips[i].startTime = prevEnd + 1;
 		}
 	}
 
