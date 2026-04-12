@@ -12,7 +12,7 @@ export const PAUSE_AFTER_TYPE = 800;
 export const PAUSE_AFTER_RESPONSE = 1000;
 
 /** Minimum open-widget event duration (ms) — narration introduces the widget */
-export const MIN_OPEN_WIDGET_DURATION = 8000;
+export const MIN_OPEN_WIDGET_DURATION = 10000;
 
 /** Minimum query event duration (ms) — narration describes Q&A */
 export const MIN_QUERY_DURATION = 12000;
