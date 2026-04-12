@@ -341,7 +341,8 @@ async function run() {
 	const downloadSnapshot = async (url: string, filename: string) => {
 		log(`Downloading ${filename} from ${url}`);
 		const res = await fetch(url);
-		if (!res.ok) throw new Error(`Failed to download ${filename}: ${res.status}`);
+		if (!res.ok)
+			throw new Error(`Failed to download ${filename}: ${res.status}`);
 		const buf = Buffer.from(await res.arrayBuffer());
 		// dir may not exist yet (set in step 2), so defer writing
 		return { filename, buf };

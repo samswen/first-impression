@@ -920,9 +920,7 @@ export async function composeVideo(
 	const stat = fs.statSync(outputPath);
 	const sizeMB = stat.size / 1024 / 1024;
 	const finalDur = await getDuration(outputPath);
-	onProgress?.(
-		`Final video: ${sizeMB.toFixed(1)}MB, ${finalDur.toFixed(1)}s`,
-	);
+	onProgress?.(`Final video: ${sizeMB.toFixed(1)}MB, ${finalDur.toFixed(1)}s`);
 	return { outputFile: "final.webm", sizeMB };
 }
 

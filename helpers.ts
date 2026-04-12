@@ -11,6 +11,15 @@ export const PAUSE_AFTER_TYPE = 800;
 /** Pause after AI response finishes — let viewer read the answer */
 export const PAUSE_AFTER_RESPONSE = 1000;
 
+/** Minimum open-widget event duration (ms) — narration introduces the widget */
+export const MIN_OPEN_WIDGET_DURATION = 8000;
+
+/** Minimum query event duration (ms) — narration describes Q&A */
+export const MIN_QUERY_DURATION = 12000;
+
+/** Minimum query event duration with form filling (ms) — more to narrate */
+export const MIN_QUERY_WITH_FORM_DURATION = 20000;
+
 /** Max time to wait for AI streaming to finish */
 const STREAMING_TIMEOUT = 90_000;
 

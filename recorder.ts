@@ -9,6 +9,9 @@ import { getPlaywrightProxy } from "./proxy";
 const execP = promisify(execFile);
 
 import {
+	MIN_OPEN_WIDGET_DURATION,
+	MIN_QUERY_DURATION,
+	MIN_QUERY_WITH_FORM_DURATION,
 	PAUSE_AFTER_RESPONSE,
 	resetZoom,
 	sendMessage,
@@ -469,20 +472,19 @@ async function loadPageForSnapshot(
 
 		// NOTE: No named function expressions inside page.evaluate —
 		// esbuild adds __name() decorators that don't exist in the browser context.
-		const fixResults = await page.evaluate(
-			(blackPosters: string[]) => {
-				const results: string[] = [];
-				const blackSet = new Set(blackPosters);
+		const fixResults = await page.evaluate((blackPosters: string[]) => {
+			const results: string[] = [];
+			const blackSet = new Set(blackPosters);
 
-				for (const video of document.querySelectorAll("video")) {
-					if (video.error || video.readyState < 2) {
-						const w = video.offsetWidth;
-						const h = video.offsetHeight;
-						const posterIsBlack = video.poster
-							? blackSet.has(video.poster)
-							: false;
+			for (const video of document.querySelectorAll("video")) {
+				if (video.error || video.readyState < 2) {
+					const w = video.offsetWidth;
+					const h = video.offsetHeight;
+					const posterIsBlack = video.poster
+						? blackSet.has(video.poster)
+						: false;
 
-						if (video.poster && !posterIsBlack) {
+					if (video.poster && !posterIsBlack) {
 						// Replace with poster image (only if poster is not black)
 						const img = document.createElement("img");
 						img.src = video.poster;
@@ -530,10 +532,7 @@ async function loadPageForSnapshot(
 									img.style.objectFit = "cover";
 									img.style.display = "block";
 									const cs = window.getComputedStyle(video);
-									if (
-										cs.position === "absolute" ||
-										cs.position === "fixed"
-									) {
+									if (cs.position === "absolute" || cs.position === "fixed") {
 										img.style.position = cs.position;
 										img.style.top = cs.top;
 										img.style.left = cs.left;
@@ -569,9 +568,7 @@ async function loadPageForSnapshot(
 				}
 			}
 			return results;
-		},
-			blackPosterList,
-		);
+		}, blackPosterList);
 
 		for (const r of fixResults) {
 			log(`[video-fix] ${r}`);
@@ -595,15 +592,12 @@ async function loadPageForSnapshot(
 				if (parseFloat(cs.opacity) < 0.1) {
 					node.style.setProperty("opacity", "1", "important");
 					const tag = node.tagName.toLowerCase();
-					const cls =
-						node.className?.toString().slice(0, 60) || "";
+					const cls = node.className?.toString().slice(0, 60) || "";
 					fixes.push(`opacity→1 <${tag}> ${cls}`);
 				}
 				if (cs.visibility === "hidden") {
 					node.style.setProperty("visibility", "visible", "important");
-					fixes.push(
-						`visibility→visible <${node.tagName.toLowerCase()}>`,
-					);
+					fixes.push(`visibility→visible <${node.tagName.toLowerCase()}>`);
 				}
 				node = node.parentElement;
 			}
@@ -930,6 +924,11 @@ body { ${bgStyle} }
 			await input.waitFor({ state: "visible", timeout: 5000 });
 			await page.waitForTimeout(3000);
 
+			const openElapsed = (this.now() - openStart) * 1000;
+			if (openElapsed < MIN_OPEN_WIDGET_DURATION) {
+				await page.waitForTimeout(MIN_OPEN_WIDGET_DURATION - openElapsed);
+			}
+
 			this.timeline.push({
 				action: "open-widget",
 				label: "Open chat widget",
@@ -1021,6 +1020,14 @@ body { ${bgStyle} }
 						formSubmitted = true;
 						filledFormThisQuery = true;
 					}
+				}
+
+				const minDuration = filledFormThisQuery
+					? MIN_QUERY_WITH_FORM_DURATION
+					: MIN_QUERY_DURATION;
+				const queryElapsed = (this.now() - queryStart) * 1000;
+				if (queryElapsed < minDuration) {
+					await page.waitForTimeout(minDuration - queryElapsed);
 				}
 
 				// Append form context to response if a contact form was filled during this query

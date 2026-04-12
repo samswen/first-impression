@@ -192,8 +192,6 @@ export async function publishDemo(
 		files.push({ name: "demo.html", contentType: "text/html; charset=utf-8" });
 	}
 
-
-
 	// Build tenant snapshot — include generated content for future improvements
 	const tenantSnapshot: Record<string, unknown> = {
 		...(tenantInfo as unknown as Record<string, unknown>),
