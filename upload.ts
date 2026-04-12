@@ -84,6 +84,7 @@ export interface PublishOptions {
 	snapshotPath?: string; // absolute path to snapshot.png (optional)
 	snapshotMobilePath?: string; // absolute path to snapshot-mobile.png (optional)
 	diagLogPath?: string; // absolute path to snapshot-diag.log (optional)
+	mobileDiagLogPath?: string; // absolute path to snapshot-mobile-diag.log (optional)
 	config?: Record<string, unknown>; // recording inputs for reproduction
 	targetUrl?: string; // target site URL for interactive demo redirect
 	widgetUrl?: string; // widget script URL (when not already on site)
@@ -197,6 +198,7 @@ export async function publishDemo(
 		snapshotPath,
 		snapshotMobilePath,
 		diagLogPath,
+		mobileDiagLogPath,
 		config,
 		targetUrl,
 		widgetUrl,
@@ -233,6 +235,11 @@ export async function publishDemo(
 	const hasDiagLog = diagLogPath && fs.existsSync(diagLogPath);
 	if (hasDiagLog) {
 		files.push({ name: "snapshot-diag.log", contentType: "text/plain" });
+	}
+
+	const hasMobileDiagLog = mobileDiagLogPath && fs.existsSync(mobileDiagLogPath);
+	if (hasMobileDiagLog) {
+		files.push({ name: "snapshot-mobile-diag.log", contentType: "text/plain" });
 	}
 
 	if (targetUrl) {
@@ -297,12 +304,20 @@ export async function publishDemo(
 		);
 	}
 
-	// 2c. Upload diagnostic log if exists
+	// 2c. Upload diagnostic logs if exist
 	if (hasDiagLog) {
 		const diagBuffer = fs.readFileSync(diagLogPath);
 		await uploadWithPresignedUrl(
 			uploads["snapshot-diag.log"].url,
 			diagBuffer,
+			"text/plain",
+		);
+	}
+	if (hasMobileDiagLog) {
+		const mobileDiagBuffer = fs.readFileSync(mobileDiagLogPath);
+		await uploadWithPresignedUrl(
+			uploads["snapshot-mobile-diag.log"].url,
+			mobileDiagBuffer,
 			"text/plain",
 		);
 	}

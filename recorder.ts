@@ -79,40 +79,72 @@ async function loadPageForSnapshot(
 		emit("progress", msg);
 	};
 
-	// Log failed image requests for diagnostics
+	// Log failed requests for diagnostics (images + critical resources)
 	page.on("requestfailed", (req) => {
-		if (req.resourceType() === "image") {
+		const type = req.resourceType();
+		if (type === "image" || type === "stylesheet" || type === "script") {
 			log(
-				`[img-request-fail] ${req.url().slice(0, 120)} -> ${req.failure()?.errorText}`,
+				`[request-fail] ${type} ${req.url().slice(0, 120)} -> ${req.failure()?.errorText}`,
 			);
 		}
 	});
 
+	const loadStart = Date.now();
 	const navResponse = await page.goto(url, {
 		waitUntil: "load",
 		timeout: 60_000,
 	});
+	const loadDuration = ((Date.now() - loadStart) / 1000).toFixed(1);
 
 	// Check for Cloudflare challenge via response header
 	const cfMitigated = navResponse?.headers()["cf-mitigated"];
-	log(`cf-mitigated: ${cfMitigated || "none"}`);
+	log(
+		`[nav] status=${navResponse?.status() ?? "?"} cf-mitigated=${cfMitigated || "none"} load=${loadDuration}s url=${page.url().slice(0, 120)}`,
+	);
 	if (cfMitigated === "challenge") {
 		log("Cloudflare challenge detected, attempting to solve...");
+		const solveStart = Date.now();
 		const result = await solveTurnstile(page);
+		const solveDuration = ((Date.now() - solveStart) / 1000).toFixed(1);
 		if (result.solved) {
-			log("Cloudflare challenge solved, waiting for real page...");
+			log(
+				`[cf-solve] OK in ${solveDuration}s (${result.attempts} attempt${result.attempts !== 1 ? "s" : ""})`,
+			);
+
+			// Check cf_clearance cookie was set
+			const cookies = await page.context().cookies();
+			const clearance = cookies.find((c) => c.name === "cf_clearance");
+			log(
+				`[cf-cookie] cf_clearance=${clearance ? `set (domain=${clearance.domain})` : "MISSING"}`,
+			);
+
+			// After challenge solve the browser has the cf_clearance cookie, but
+			// images requested during the challenge page may have cached failures.
+			// A full reload ensures all resources are fetched cleanly.
+			log("[cf-reload] Reloading page for fresh resources...");
+			let reloadResponse: Awaited<ReturnType<typeof page.reload>> = null;
 			try {
-				await page.waitForLoadState("load", { timeout: 30_000 });
+				reloadResponse = await page.reload({
+					waitUntil: "load",
+					timeout: 30_000,
+				});
 			} catch {
-				// timeout
+				log("[cf-reload] Timed out waiting for load");
 			}
+			const reloadCf = reloadResponse?.headers()["cf-mitigated"];
+			log(
+				`[cf-reload] status=${reloadResponse?.status() ?? "?"} cf-mitigated=${reloadCf || "none"} url=${page.url().slice(0, 120)}`,
+			);
+
 			try {
 				await page.waitForLoadState("networkidle", { timeout: 10_000 });
 			} catch {
 				// Some sites never reach networkidle
 			}
 		} else {
-			log(`Cloudflare challenge not solved: ${result.error}`);
+			log(
+				`[cf-solve] FAILED in ${solveDuration}s (${result.attempts} attempt${result.attempts !== 1 ? "s" : ""}): ${result.error}`,
+			);
 		}
 	}
 
@@ -194,7 +226,9 @@ async function loadPageForSnapshot(
 		});
 		if (failed.length === 0) break;
 
-		log(`[img-retry] round ${round}: ${failed.length} failed image(s)`);
+		log(
+			`[img-retry] round ${round}/3: ${failed.length} failed image(s), strategy=${round === 1 ? "strip-srcset" : round === 2 ? "replace-element" : "cache-buster"}`,
+		);
 		for (const src of failed.slice(0, 5)) {
 			log(`[img-retry]   ${src}`);
 		}
@@ -260,6 +294,16 @@ async function loadPageForSnapshot(
 					),
 			);
 		});
+
+		// Log how many recovered after this round
+		const stillFailed = await page.evaluate(() => {
+			return Array.from(document.querySelectorAll("img")).filter(
+				(img) => img.complete && img.naturalWidth === 0 && img.src,
+			).length;
+		});
+		log(
+			`[img-retry] round ${round} done: ${failed.length - stillFailed} recovered, ${stillFailed} still failed`,
+		);
 	}
 
 	// Final settle time
@@ -371,8 +415,9 @@ async function loadPageForSnapshot(
 				.length,
 		};
 	});
+	const totalDuration = ((Date.now() - loadStart) / 1000).toFixed(1);
 	log(
-		`[img-stats] ${imageStats.loadedImages}/${imageStats.totalImages} significant images loaded`,
+		`[img-stats] ${imageStats.loadedImages}/${imageStats.totalImages} significant images loaded (total=${totalDuration}s)`,
 	);
 
 	// Write diagnostics to file in recording directory
@@ -425,11 +470,21 @@ export class Recorder {
 		let navigateUrl: string;
 
 		if (this.config.widgetUrl) {
-			emit("progress", `Taking snapshot of ${this.config.url}...`);
+			const snapshotPath = path.join(dir, "snapshot.png");
+			const snapshotMobilePath = path.join(dir, "snapshot-mobile.png");
 
-			// Use a separate browser for the snapshot (no recording)
+			// Reuse existing snapshots if both desktop and mobile are already present
+			let snapshotOk =
+				fs.existsSync(snapshotPath) && fs.existsSync(snapshotMobilePath);
+			if (snapshotOk) {
+				emit("progress", "Reusing existing snapshots");
+			}
+
+			if (!snapshotOk) {
+				emit("progress", `Taking snapshot of ${this.config.url}...`);
+			}
+
 			// Retry up to 3 times on failure or degraded image quality
-			let snapshotOk = false;
 			const maxSnapshotAttempts = 3;
 			for (
 				let attempt = 1;
@@ -460,35 +515,20 @@ export class Recorder {
 						"snapshot-diag.log",
 					);
 
-					const snapshotPath = path.join(dir, "snapshot.png");
+					// Desktop screenshot
 					await snapPage.screenshot({
-						path: snapshotPath,
+						path: path.join(dir, "snapshot.png"),
+						fullPage: false,
+					});
+
+					// Mobile screenshot — resize the same page instead of a second load
+					await snapPage.setViewportSize({ width: 390, height: 844 });
+					await snapPage.waitForTimeout(1500);
+					await snapPage.screenshot({
+						path: path.join(dir, "snapshot-mobile.png"),
 						fullPage: false,
 					});
 					await snapContext.close();
-
-					// Capture mobile snapshot at iPhone 14/15 size
-					const mobileContext = await snapBrowser.newContext({
-						viewport: { width: 390, height: 844 },
-						ignoreHTTPSErrors: true,
-						userAgent: CHROME_USER_AGENT,
-					});
-					await applyStealthToContext(mobileContext);
-					const mobilePage = await mobileContext.newPage();
-					const mobileStats = await loadPageForSnapshot(
-						mobilePage,
-						this.config.url,
-						emit,
-						dir,
-						"snapshot-mobile-diag.log",
-					);
-
-					const snapshotMobilePath = path.join(dir, "snapshot-mobile.png");
-					await mobilePage.screenshot({
-						path: snapshotMobilePath,
-						fullPage: false,
-					});
-					await mobileContext.close();
 
 					// Check image load quality — retry if less than half loaded
 					const { totalImages, loadedImages } = desktopStats;
@@ -520,7 +560,6 @@ export class Recorder {
 			}
 
 			// If snapshot still failed, try to reuse one from a previous recording
-			const snapshotPath = path.join(dir, "snapshot.png");
 			if (!snapshotOk) {
 				const parentDir = path.dirname(dir);
 				const siblings = fs.existsSync(parentDir)
