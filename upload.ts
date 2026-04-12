@@ -243,6 +243,12 @@ export async function publishDemo(
 		files.push({ name: "snapshot-mobile-diag.log", contentType: "text/plain" });
 	}
 
+	const pipelineLogPath = process.env.FI_PIPELINE_LOG;
+	const hasPipelineLog = pipelineLogPath && fs.existsSync(pipelineLogPath);
+	if (hasPipelineLog) {
+		files.push({ name: "pipeline.log", contentType: "text/plain" });
+	}
+
 	if (targetUrl) {
 		files.push({ name: "demo.html", contentType: "text/html; charset=utf-8" });
 	}
@@ -319,6 +325,14 @@ export async function publishDemo(
 		await uploadWithPresignedUrl(
 			uploads["snapshot-mobile-diag.log"].url,
 			mobileDiagBuffer,
+			"text/plain",
+		);
+	}
+	if (hasPipelineLog) {
+		const pipelineLogBuffer = fs.readFileSync(pipelineLogPath);
+		await uploadWithPresignedUrl(
+			uploads["pipeline.log"].url,
+			pipelineLogBuffer,
 			"text/plain",
 		);
 	}

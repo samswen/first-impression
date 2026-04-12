@@ -1,5 +1,8 @@
 import "dotenv/config";
 import { spawn } from "node:child_process";
+import { createWriteStream, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { PublishCommand, SNSClient } from "@aws-sdk/client-sns";
 import {
 	DeleteMessageCommand,
@@ -56,12 +59,26 @@ const CLI_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 function runCli(
 	args: string[],
-): Promise<{ exitCode: number; timedOut: boolean }> {
+): Promise<{ exitCode: number; timedOut: boolean; logPath: string }> {
 	return new Promise((resolve, reject) => {
+		// Capture all CLI output to a log file for S3 upload
+		const logPath = path.join(tmpdir(), `fi-pipeline-${Date.now()}.log`);
+		const logStream = createWriteStream(logPath, { flags: "w" });
+
 		const child = spawn("tsx", ["cli.ts", ...args], {
 			cwd: import.meta.dirname,
-			stdio: "inherit",
-			env: { ...process.env },
+			stdio: ["inherit", "pipe", "pipe"],
+			env: { ...process.env, FI_PIPELINE_LOG: logPath },
+		});
+
+		// Tee stdout/stderr to both console and log file
+		child.stdout?.on("data", (chunk: Buffer) => {
+			process.stdout.write(chunk);
+			logStream.write(chunk);
+		});
+		child.stderr?.on("data", (chunk: Buffer) => {
+			process.stderr.write(chunk);
+			logStream.write(chunk);
 		});
 
 		let timedOut = false;
@@ -75,11 +92,13 @@ function runCli(
 
 		child.on("error", (err) => {
 			clearTimeout(timer);
+			logStream.end();
 			reject(err);
 		});
 		child.on("exit", (code) => {
 			clearTimeout(timer);
-			resolve({ exitCode: code ?? 1, timedOut });
+			logStream.end();
+			resolve({ exitCode: code ?? 1, timedOut, logPath });
 		});
 	});
 }
@@ -191,7 +210,14 @@ async function poll(): Promise<boolean> {
 	const args = buildCliArgs(task);
 	log(`CLI args: tsx cli.ts ${args.join(" ")}`);
 
-	const { exitCode, timedOut } = await runCli(args);
+	const { exitCode, timedOut, logPath } = await runCli(args);
+
+	// Clean up temp pipeline log (already uploaded to S3 during publish if successful)
+	try {
+		unlinkSync(logPath);
+	} catch {
+		// non-fatal
+	}
 
 	if (!timedOut && exitCode === 0) {
 		log(`Tenant ${task.tenantId} completed successfully`);
