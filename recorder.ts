@@ -354,17 +354,21 @@ async function loadPageForSnapshot(
 				size: `${v.offsetWidth}x${v.offsetHeight}`,
 				autoplay: v.autoplay,
 				muted: v.muted,
+				preload: v.preload,
 			})),
 		);
 		for (const v of videoDetails) {
 			log(
-				`[video] #${v.index} ready=${v.readyState} err=${v.error ?? "none"} ${v.size} poster=${v.poster} src=${v.src}`,
+				`[video] #${v.index} ready=${v.readyState} err=${v.error ?? "none"} ${v.size} preload=${v.preload} poster=${v.poster} src=${v.src}`,
 			);
 		}
 
+		// Force preload=auto and muted before playing — some sites lazy-load videos
+		// or use preload=none/metadata which prevents buffering
 		await page.evaluate(() => {
 			for (const video of document.querySelectorAll("video")) {
 				if (video.readyState < 2 && !video.error) {
+					video.preload = "auto";
 					video.muted = true;
 					video.play().catch(() => {});
 				}
@@ -393,8 +397,56 @@ async function loadPageForSnapshot(
 			await page.waitForTimeout(5000);
 		}
 
+		// Log post-wait state
+		const postWaitDetails = await page.evaluate(() =>
+			Array.from(document.querySelectorAll("video")).map((v, i) => ({
+				index: i,
+				readyState: v.readyState,
+				error: v.error?.message || null,
+				currentTime: v.currentTime,
+				buffered: v.buffered.length > 0 ? v.buffered.end(0) : 0,
+			})),
+		);
+		for (const v of postWaitDetails) {
+			log(
+				`[video-post] #${v.index} ready=${v.readyState} err=${v.error ?? "none"} time=${v.currentTime.toFixed(1)}s buffered=${v.buffered.toFixed(1)}s`,
+			);
+		}
+
 		const fixResults = await page.evaluate(() => {
 			const results: string[] = [];
+
+			// Helper: check if an image URL is likely a black/blank frame
+			// by loading it into a small canvas and checking average brightness
+			const isBlackPoster = (video: HTMLVideoElement): boolean => {
+				if (!video.poster) return false;
+				// Poster images from video frame 0 are often tiny files (<20KB for 1920w)
+				// because they're solid black or near-black (video fade-in).
+				// We can't async-fetch here, so check if the poster is already cached
+				// by creating an img and checking if it loads synchronously.
+				try {
+					const testImg = new Image();
+					testImg.src = video.poster;
+					if (!testImg.complete || testImg.naturalWidth === 0) return false;
+					const canvas = document.createElement("canvas");
+					const size = 32; // Sample at small size for speed
+					canvas.width = size;
+					canvas.height = size;
+					const ctx = canvas.getContext("2d");
+					if (!ctx) return false;
+					ctx.drawImage(testImg, 0, 0, size, size);
+					const data = ctx.getImageData(0, 0, size, size).data;
+					let totalBrightness = 0;
+					for (let i = 0; i < data.length; i += 4) {
+						totalBrightness += data[i] + data[i + 1] + data[i + 2];
+					}
+					const avgBrightness = totalBrightness / (size * size * 3);
+					return avgBrightness < 10; // Nearly black
+				} catch {
+					return false;
+				}
+			};
+
 			for (const video of document.querySelectorAll("video")) {
 				if (video.error || video.readyState < 2) {
 					const w = video.offsetWidth;
@@ -418,8 +470,8 @@ async function loadPageForSnapshot(
 						}
 					};
 
-					if (video.poster) {
-						// Replace with poster image
+					if (video.poster && !isBlackPoster(video)) {
+						// Replace with poster image (only if poster is not black)
 						const img = document.createElement("img");
 						img.src = video.poster;
 						img.style.width = w ? `${w}px` : "100%";
@@ -430,7 +482,7 @@ async function loadPageForSnapshot(
 						video.replaceWith(img);
 						results.push(`poster-replace ${w}x${h}`);
 					} else if (w && h && video.readyState >= 1) {
-						// Has metadata but no frame data — try canvas capture
+						// Has metadata — try canvas capture of current frame
 						try {
 							const canvas = document.createElement("canvas");
 							canvas.width = video.videoWidth || w;
@@ -438,9 +490,22 @@ async function loadPageForSnapshot(
 							const ctx = canvas.getContext("2d");
 							if (ctx) {
 								ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-								const dataUrl = canvas.toDataURL("image/png");
-								// Check if the canvas captured anything (non-blank)
-								if (dataUrl.length > 1000) {
+								const data = ctx.getImageData(
+									0,
+									0,
+									canvas.width,
+									canvas.height,
+								).data;
+								let brightness = 0;
+								// Sample every 100th pixel for speed
+								for (let i = 0; i < data.length; i += 400) {
+									brightness += data[i] + data[i + 1] + data[i + 2];
+								}
+								const avgBr =
+									brightness / (Math.ceil(data.length / 400) * 3);
+								if (avgBr > 10) {
+									// Non-black frame captured
+									const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
 									const img = document.createElement("img");
 									img.src = dataUrl;
 									img.style.width = `${w}px`;
@@ -456,17 +521,20 @@ async function loadPageForSnapshot(
 						} catch {
 							// Canvas capture failed (e.g. tainted by CORS)
 						}
-						// Canvas failed — hide the black rectangle
+						// Canvas frame is also black — hide the video
 						video.style.visibility = "hidden";
-						results.push(`hidden (canvas-failed) ${w}x${h}`);
+						results.push(`hidden (black-frame) ${w}x${h}`);
 					} else if (!w || !h) {
 						// No dimensions — just remove it
 						video.remove();
 						results.push("removed (no-dimensions)");
 					} else {
-						// Has dimensions, no poster, no metadata — hide to avoid black rectangle
+						// Has dimensions but no usable content — hide
+						const reason = video.poster
+							? "black-poster"
+							: "no-poster";
 						video.style.visibility = "hidden";
-						results.push(`hidden (no-poster) ${w}x${h}`);
+						results.push(`hidden (${reason}) ${w}x${h}`);
 					}
 				} else {
 					video.pause();
