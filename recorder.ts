@@ -336,12 +336,32 @@ async function loadPageForSnapshot(
 		);
 	}
 
-	// Handle videos: pause loaded ones, replace errored/unloaded with poster
+	// Handle videos: pause loaded ones, replace errored/unloaded with poster or frame capture
 	const videoCount = await page.evaluate(
 		() => document.querySelectorAll("video").length,
 	);
 	if (videoCount > 0) {
 		log(`Found ${videoCount} video(s), attempting to render...`);
+
+		// Log details for each video
+		const videoDetails = await page.evaluate(() =>
+			Array.from(document.querySelectorAll("video")).map((v, i) => ({
+				index: i,
+				src: v.currentSrc?.slice(0, 120) || v.src?.slice(0, 120) || "(none)",
+				poster: v.poster?.slice(0, 120) || "(none)",
+				readyState: v.readyState,
+				error: v.error?.message || null,
+				size: `${v.offsetWidth}x${v.offsetHeight}`,
+				autoplay: v.autoplay,
+				muted: v.muted,
+			})),
+		);
+		for (const v of videoDetails) {
+			log(
+				`[video] #${v.index} ready=${v.readyState} err=${v.error ?? "none"} ${v.size} poster=${v.poster} src=${v.src}`,
+			);
+		}
+
 		await page.evaluate(() => {
 			for (const video of document.querySelectorAll("video")) {
 				if (video.readyState < 2 && !video.error) {
@@ -373,43 +393,92 @@ async function loadPageForSnapshot(
 			await page.waitForTimeout(5000);
 		}
 
-		const fixed = await page.evaluate(() => {
-			let count = 0;
+		const fixResults = await page.evaluate(() => {
+			const results: string[] = [];
 			for (const video of document.querySelectorAll("video")) {
 				if (video.error || video.readyState < 2) {
 					const w = video.offsetWidth;
 					const h = video.offsetHeight;
+
+					// Copy positioning styles for any replacement element
+					const copyPosition = (
+						el: HTMLElement,
+						source: CSSStyleDeclaration,
+					) => {
+						if (
+							source.position === "absolute" ||
+							source.position === "fixed"
+						) {
+							el.style.position = source.position;
+							el.style.top = source.top;
+							el.style.left = source.left;
+							el.style.right = source.right;
+							el.style.bottom = source.bottom;
+							el.style.zIndex = source.zIndex;
+						}
+					};
+
 					if (video.poster) {
+						// Replace with poster image
 						const img = document.createElement("img");
 						img.src = video.poster;
 						img.style.width = w ? `${w}px` : "100%";
 						img.style.height = h ? `${h}px` : "auto";
 						img.style.objectFit = "cover";
 						img.style.display = "block";
-						const style = window.getComputedStyle(video);
-						if (style.position === "absolute" || style.position === "fixed") {
-							img.style.position = style.position;
-							img.style.top = style.top;
-							img.style.left = style.left;
-							img.style.right = style.right;
-							img.style.bottom = style.bottom;
-							img.style.zIndex = style.zIndex;
-						}
+						copyPosition(img, window.getComputedStyle(video));
 						video.replaceWith(img);
+						results.push(`poster-replace ${w}x${h}`);
+					} else if (w && h && video.readyState >= 1) {
+						// Has metadata but no frame data — try canvas capture
+						try {
+							const canvas = document.createElement("canvas");
+							canvas.width = video.videoWidth || w;
+							canvas.height = video.videoHeight || h;
+							const ctx = canvas.getContext("2d");
+							if (ctx) {
+								ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+								const dataUrl = canvas.toDataURL("image/png");
+								// Check if the canvas captured anything (non-blank)
+								if (dataUrl.length > 1000) {
+									const img = document.createElement("img");
+									img.src = dataUrl;
+									img.style.width = `${w}px`;
+									img.style.height = `${h}px`;
+									img.style.objectFit = "cover";
+									img.style.display = "block";
+									copyPosition(img, window.getComputedStyle(video));
+									video.replaceWith(img);
+									results.push(`canvas-capture ${w}x${h}`);
+									continue;
+								}
+							}
+						} catch {
+							// Canvas capture failed (e.g. tainted by CORS)
+						}
+						// Canvas failed — hide the black rectangle
+						video.style.visibility = "hidden";
+						results.push(`hidden (canvas-failed) ${w}x${h}`);
 					} else if (!w || !h) {
+						// No dimensions — just remove it
 						video.remove();
+						results.push("removed (no-dimensions)");
+					} else {
+						// Has dimensions, no poster, no metadata — hide to avoid black rectangle
+						video.style.visibility = "hidden";
+						results.push(`hidden (no-poster) ${w}x${h}`);
 					}
-					count++;
 				} else {
 					video.pause();
 					video.controls = false;
+					results.push(`paused ${video.offsetWidth}x${video.offsetHeight}`);
 				}
 			}
-			return count;
+			return results;
 		});
 
-		if (fixed > 0) {
-			log(`Replaced ${fixed} errored/unloaded video(s)`);
+		for (const r of fixResults) {
+			log(`[video-fix] ${r}`);
 		}
 	}
 
