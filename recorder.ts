@@ -413,43 +413,43 @@ async function loadPageForSnapshot(
 			);
 		}
 
+		// Detect black/blank poster images by checking file size from Node.js
+		// (CORS blocks canvas pixel reads for cross-origin poster images in the browser).
+		// A 1920w JPEG under 25KB is almost certainly a solid black or blank frame.
+		const blackPosterUrls = new Set<string>();
+		for (const v of postWaitDetails) {
+			if (v.readyState >= 2) continue;
+			const detail = videoDetails[v.index];
+			if (!detail?.poster || detail.poster === "(none)") continue;
+			try {
+				const headRes = await fetch(detail.poster, { method: "HEAD" });
+				const size = Number(headRes.headers.get("content-length") || 0);
+				if (headRes.ok && size > 0 && size < 25000) {
+					blackPosterUrls.add(detail.poster);
+					log(`[video] poster #${v.index} is likely black (${size} bytes)`);
+				}
+			} catch {
+				// ignore fetch errors
+			}
+		}
+		const blackPosterList = [...blackPosterUrls];
+
 		// NOTE: No named function expressions inside page.evaluate —
 		// esbuild adds __name() decorators that don't exist in the browser context.
-		const fixResults = await page.evaluate(() => {
-			const results: string[] = [];
+		const fixResults = await page.evaluate(
+			(blackPosters: string[]) => {
+				const results: string[] = [];
+				const blackSet = new Set(blackPosters);
 
-			for (const video of document.querySelectorAll("video")) {
-				if (video.error || video.readyState < 2) {
-					const w = video.offsetWidth;
-					const h = video.offsetHeight;
+				for (const video of document.querySelectorAll("video")) {
+					if (video.error || video.readyState < 2) {
+						const w = video.offsetWidth;
+						const h = video.offsetHeight;
+						const posterIsBlack = video.poster
+							? blackSet.has(video.poster)
+							: false;
 
-					// Check if poster is a black/blank frame (e.g. video fade-in)
-					let posterIsBlack = false;
-					if (video.poster) {
-						try {
-							const testImg = new Image();
-							testImg.src = video.poster;
-							if (testImg.complete && testImg.naturalWidth > 0) {
-								const c = document.createElement("canvas");
-								c.width = 32;
-								c.height = 32;
-								const cx = c.getContext("2d");
-								if (cx) {
-									cx.drawImage(testImg, 0, 0, 32, 32);
-									const px = cx.getImageData(0, 0, 32, 32).data;
-									let total = 0;
-									for (let i = 0; i < px.length; i += 4) {
-										total += px[i] + px[i + 1] + px[i + 2];
-									}
-									posterIsBlack = total / (32 * 32 * 3) < 10;
-								}
-							}
-						} catch {
-							// ignore
-						}
-					}
-
-					if (video.poster && !posterIsBlack) {
+						if (video.poster && !posterIsBlack) {
 						// Replace with poster image (only if poster is not black)
 						const img = document.createElement("img");
 						img.src = video.poster;
@@ -536,7 +536,9 @@ async function loadPageForSnapshot(
 				}
 			}
 			return results;
-		});
+		},
+			blackPosterList,
+		);
 
 		for (const r of fixResults) {
 			log(`[video-fix] ${r}`);

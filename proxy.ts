@@ -106,10 +106,18 @@ export async function getPlaywrightProxy(): Promise<
 		return undefined;
 	}
 
+	// CDN domains never need proxy (no IP blocking, and proxies often
+	// can't handle video streaming / large binary downloads)
+	const cdnBypass = [
+		"*.cdn-website.com", // Duda video/image CDN
+		"*.cloudfront.net", // AWS CloudFront
+		"*.googleapis.com", // Google APIs
+		"*.gstatic.com", // Google static
+		"*.cdn.shopify.com", // Shopify CDN
+	];
 	const domains = await fetchBypassDomains();
-	if (domains.length > 0) {
-		proxy.bypass = domains.map((d) => `*.${d}`).join(",");
-	}
+	const allBypass = [...cdnBypass, ...domains.map((d) => `*.${d}`)];
+	proxy.bypass = allBypass.join(",");
 
 	cached = proxy;
 	return cached;
