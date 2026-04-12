@@ -903,6 +903,25 @@ body { ${bgStyle} }
 
 			// Start the timeline clock only after the page is visible with widget
 			this.recordingStart = Date.now();
+
+			// Inject a tiny continuous animation to prevent Playwright's VFR encoder
+			// from compressing idle frames during waitForTimeout calls. Without this,
+			// idle periods get squished in the video, causing voiceover misalignment.
+			await page.evaluate(() => {
+				const el = document.createElement("div");
+				el.id = "__fi_keepalive";
+				el.style.cssText =
+					"position:fixed;top:0;left:0;width:1px;height:1px;pointer-events:none;z-index:-1;";
+				el.animate(
+					[
+						{ transform: "translateX(0px)" },
+						{ transform: "translateX(0.1px)" },
+					],
+					{ duration: 100, iterations: 1 / 0 },
+				);
+				document.body.appendChild(el);
+			});
+
 			await page.waitForTimeout(2000);
 
 			this.timeline.push({
@@ -1060,6 +1079,9 @@ body { ${bgStyle} }
 			emit("action-end", "Zoomed out", "zoom-out");
 
 			// --- Finalize ---
+			await page.evaluate(() => {
+				document.getElementById("__fi_keepalive")?.remove();
+			});
 			emit("progress", "Closing browser to finalize video...");
 			await context.close();
 			await browser.close();
