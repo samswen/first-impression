@@ -192,14 +192,12 @@ export async function addVoiceover(
 	);
 
 	// Build segments for the narration API
-	// Use 60% of real event duration to give TTS timing headroom.
-	// TTS speaks ~2.5 words/sec, and the narrate API targets ~2.2 words/sec
-	// of available duration, so 60% keeps clips comfortably within the window.
+	// Use 85% of real event duration to give TTS timing headroom.
 	const segments: NarrationSegment[] = narratableEvents.map((e) => ({
 		action: e.action,
 		query: e.action.startsWith("query-") ? e.label : undefined,
 		response: e.response?.slice(0, 500),
-		availableDuration: (e.endTime - e.startTime) * 0.6,
+		availableDuration: (e.endTime - e.startTime) * 0.85,
 	}));
 
 	onProgress?.("Narration budgets:");
