@@ -89,6 +89,39 @@ async function loadPageForSnapshot(
 		}
 	});
 
+	// Bypass proxy for third-party video/media requests.
+	// The proxy is needed for the page domain (CF challenge cookies are IP-bound),
+	// but CDN-hosted videos on different domains don't need it — and residential
+	// proxies often can't handle video streaming.
+	const pageDomain = new URL(url).hostname;
+	await page.route("**/*", async (route) => {
+		const req = route.request();
+		if (req.resourceType() !== "media") return route.fallback();
+		let reqDomain: string;
+		try {
+			reqDomain = new URL(req.url()).hostname;
+		} catch {
+			return route.fallback();
+		}
+		if (reqDomain === pageDomain) return route.fallback();
+		// Third-party media — fetch directly (bypassing proxy)
+		try {
+			const res = await fetch(req.url(), {
+				headers: { Range: req.headers().range || "" },
+			});
+			const body = Buffer.from(await res.arrayBuffer());
+			const headers: Record<string, string> = {};
+			for (const [k, v] of res.headers) headers[k] = v;
+			await route.fulfill({
+				status: res.status,
+				headers,
+				body,
+			});
+		} catch {
+			return route.fallback();
+		}
+	});
+
 	const loadStart = Date.now();
 	const navResponse = await page.goto(url, {
 		waitUntil: "load",
