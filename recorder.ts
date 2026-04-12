@@ -404,6 +404,44 @@ async function loadPageForSnapshot(
 		}
 	}
 
+	// Force visibility of CSS-hidden loaded images (e.g. carousel reveal animations)
+	// Many sites use JS-driven carousels/reveal patterns that set images to opacity:0
+	// and animate them in. In headless browsers the animation may never trigger.
+	const cssFixed = await page.evaluate(() => {
+		const fixes: string[] = [];
+		for (const img of document.querySelectorAll<HTMLImageElement>("img")) {
+			if (!img.complete || img.naturalWidth === 0) continue;
+			const rect = img.getBoundingClientRect();
+			if (rect.width < 200 && rect.height < 200) continue;
+			if (rect.top > 1200) continue;
+
+			let node: HTMLElement | null = img;
+			for (let depth = 0; depth < 6 && node; depth++) {
+				const cs = window.getComputedStyle(node);
+				if (parseFloat(cs.opacity) < 0.1) {
+					node.style.setProperty("opacity", "1", "important");
+					const tag = node.tagName.toLowerCase();
+					const cls =
+						node.className?.toString().slice(0, 60) || "";
+					fixes.push(`opacity→1 <${tag}> ${cls}`);
+				}
+				if (cs.visibility === "hidden") {
+					node.style.setProperty("visibility", "visible", "important");
+					fixes.push(
+						`visibility→visible <${node.tagName.toLowerCase()}>`,
+					);
+				}
+				node = node.parentElement;
+			}
+		}
+		return fixes;
+	});
+	if (cssFixed.length > 0) {
+		for (const fix of cssFixed) {
+			log(`[css-fix] ${fix}`);
+		}
+	}
+
 	// Compute image load stats (only significant images, >200px in any dimension)
 	const imageStats = await page.evaluate(() => {
 		const imgs = Array.from(document.querySelectorAll("img")).filter(

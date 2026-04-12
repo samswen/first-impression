@@ -44,6 +44,7 @@ let _stickyPort: number | null = null;
 export function getStickyPort(): number {
 	if (_stickyPort === null) {
 		_stickyPort = 10000 + Math.floor(Math.random() * 10000);
+		console.log(`[CapSolver] Sticky port assigned: ${_stickyPort}`);
 	}
 	return _stickyPort;
 }
@@ -61,15 +62,21 @@ export async function getCapSolverProxy(): Promise<ProxyInfo | null> {
 		let host = parsed.hostname;
 		if (!/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
 			const ips = await resolve4(host);
+			console.log(`[CapSolver] DNS resolved ${parsed.hostname} → ${ips[0]}`);
 			host = ips[0];
 		}
+		const port = String(getStickyPort());
+		console.log(`[CapSolver] Proxy for solver: ${host}:${port}`);
 		return {
 			host,
-			port: String(getStickyPort()),
+			port,
 			username: decodeURIComponent(parsed.username),
 			password: decodeURIComponent(parsed.password),
 		};
-	} catch {
+	} catch (err) {
+		console.error(
+			`[CapSolver] Failed to parse proxy: ${err instanceof Error ? err.message : err}`,
+		);
 		return null;
 	}
 }
@@ -90,13 +97,21 @@ async function createTask(
 		body: JSON.stringify({ clientKey: apiKey, task }),
 	});
 
-	const data = (await res.json()) as CreateTaskResponse;
+	let data: CreateTaskResponse;
+	try {
+		data = (await res.json()) as CreateTaskResponse;
+	} catch {
+		return {
+			error: `createTask: non-JSON response (HTTP ${res.status})`,
+		};
+	}
 	if (data.errorId !== 0 || !data.taskId) {
 		return {
 			error: `createTask failed: ${data.errorCode} — ${data.errorDescription}`,
 		};
 	}
 
+	console.log(`[CapSolver] Task created: ${data.taskId}`);
 	return data.taskId;
 }
 
@@ -109,9 +124,11 @@ async function pollResult(
 	if (!apiKey) return { error: "CAPSOLVER_API_KEY not set" };
 
 	const deadline = Date.now() + timeoutMs;
+	let pollCount = 0;
 
 	while (Date.now() < deadline) {
 		await new Promise((r) => setTimeout(r, intervalMs));
+		pollCount++;
 
 		const res = await fetch(`${CAPSOLVER_API}/getTaskResult`, {
 			method: "POST",
@@ -119,7 +136,17 @@ async function pollResult(
 			body: JSON.stringify({ clientKey: apiKey, taskId }),
 		});
 
-		const data = (await res.json()) as GetTaskResultResponse;
+		let data: GetTaskResultResponse;
+		try {
+			data = (await res.json()) as GetTaskResultResponse;
+		} catch {
+			console.warn(
+				`[CapSolver] Poll #${pollCount}: non-JSON response (HTTP ${res.status})`,
+			);
+			continue;
+		}
+
+		console.log(`[CapSolver] Poll #${pollCount}: status=${data.status}`);
 
 		if (data.errorId !== 0) {
 			return {
@@ -155,6 +182,11 @@ export async function solveCloudflareChallenge(params: {
 > {
 	const start = Date.now();
 	console.log(`[CapSolver] AntiCloudflareTask for ${params.websiteURL}`);
+	console.log(
+		`[CapSolver] Proxy: ${params.proxy.host}:${params.proxy.port}, ` +
+			`html: ${params.html ? `${params.html.length} chars` : "none"}, ` +
+			`userAgent: ${params.userAgent ? "yes" : "none"}`,
+	);
 
 	const task: Record<string, unknown> = {
 		type: "AntiCloudflareTask",
@@ -175,6 +207,9 @@ export async function solveCloudflareChallenge(params: {
 	if ("error" in result) return result as { error: string };
 
 	const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+	console.log(
+		`[CapSolver] Raw solution keys: ${Object.keys(result).join(", ")}`,
+	);
 
 	// CapSolver returns cookies as array of { name, value } or as object
 	const cookies: Record<string, string> = {};
@@ -196,6 +231,10 @@ export async function solveCloudflareChallenge(params: {
 		!cookies.cf_clearance
 	) {
 		cookies.cf_clearance = result.token;
+	}
+
+	if (Object.keys(cookies).length === 0) {
+		console.warn("[CapSolver] WARNING: No cookies extracted from solution");
 	}
 
 	const ua = (result.userAgent as string) || params.userAgent || "";

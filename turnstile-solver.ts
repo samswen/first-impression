@@ -281,10 +281,18 @@ async function tryCapSolver(page: Page): Promise<TurnstileSolveResult | null> {
 			return { hasTurnstile: true, siteKey: siteKey || null };
 		});
 
+		console.log(
+			`[TurnstileSolver] Detection: ${
+				turnstileInfo?.siteKey
+					? `Turnstile widget (siteKey: ${turnstileInfo.siteKey})`
+					: "JS interstitial (no siteKey found)"
+			}`,
+		);
+
 		if (turnstileInfo?.hasTurnstile && turnstileInfo.siteKey) {
 			// Turnstile widget — use AntiTurnstileTaskProxyLess
 			console.log(
-				"[TurnstileSolver] Turnstile widget detected, using CapSolver token solve",
+				"[TurnstileSolver] Using CapSolver AntiTurnstileTaskProxyLess",
 			);
 			const result = await solveTurnstileToken({
 				websiteURL: url,
@@ -329,6 +337,9 @@ async function tryCapSolver(page: Page): Promise<TurnstileSolveResult | null> {
 				console.log("[TurnstileSolver] Solved via CapSolver (Turnstile token)");
 				return { solved: true, attempts: 1 };
 			}
+			console.warn(
+				"[TurnstileSolver] Still on challenge after token injection",
+			);
 		} else {
 			// Full JS interstitial — use AntiCloudflareTask with proxy
 			const proxy = await getCapSolverProxy();
@@ -339,9 +350,8 @@ async function tryCapSolver(page: Page): Promise<TurnstileSolveResult | null> {
 				return null;
 			}
 
-			console.log(
-				"[TurnstileSolver] JS interstitial detected, using CapSolver AntiCloudflareTask",
-			);
+			console.log("[TurnstileSolver] Using CapSolver AntiCloudflareTask");
+			console.log(`[TurnstileSolver] Proxy: ${proxy.host}:${proxy.port}`);
 			const html = await page.content();
 			const userAgent = await page.evaluate(() => navigator.userAgent);
 			const result = await solveCloudflareChallenge({
@@ -361,6 +371,10 @@ async function tryCapSolver(page: Page): Promise<TurnstileSolveResult | null> {
 			// Inject cookies via Playwright context
 			const domain = new URL(url).hostname;
 			const cookieEntries = Object.entries(result.cookies);
+			console.log(
+				`[TurnstileSolver] Injecting ${cookieEntries.length} cookies ` +
+					`for .${domain}: ${cookieEntries.map(([n]) => n).join(", ")}`,
+			);
 			if (cookieEntries.length > 0) {
 				await page.context().addCookies(
 					cookieEntries.map(([name, value]) => ({
@@ -383,6 +397,9 @@ async function tryCapSolver(page: Page): Promise<TurnstileSolveResult | null> {
 				);
 				return { solved: true, attempts: 1 };
 			}
+			console.warn(
+				"[TurnstileSolver] Still on challenge after cookie injection + reload",
+			);
 		}
 	} catch (err) {
 		console.error(
