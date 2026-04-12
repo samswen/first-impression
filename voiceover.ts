@@ -200,11 +200,14 @@ export async function addVoiceover(
 		availableDuration: (e.endTime - e.startTime) * 0.85,
 	}));
 
-	onProgress?.("Narration budgets:");
-	for (const seg of segments) {
+	onProgress?.("Narration budgets (85% of event duration):");
+	for (let i = 0; i < segments.length; i++) {
+		const seg = segments[i];
+		const evt = narratableEvents[i];
+		const evtDur = evt.endTime - evt.startTime;
 		const targetWords = Math.round(seg.availableDuration * 2.2);
 		onProgress?.(
-			`  ${seg.action}: budget=${seg.availableDuration.toFixed(1)}s, ~${targetWords} words`,
+			`  ${seg.action}: event=${evtDur.toFixed(1)}s, budget=${seg.availableDuration.toFixed(1)}s, ~${targetWords} words`,
 		);
 	}
 
@@ -259,8 +262,10 @@ export async function addVoiceover(
 			: event.startTime;
 
 		const evtDur = event.endTime - event.startTime;
+		const budget = evtDur * 0.85;
+		const overUnder = duration - budget;
 		onProgress?.(
-			`  Clip ${i + 1}: TTS=${duration.toFixed(1)}s, event=${evtDur.toFixed(1)}s, ` +
+			`  Clip ${i + 1}: TTS=${duration.toFixed(1)}s, budget=${budget.toFixed(1)}s${overUnder > 0 ? ` OVER +${overUnder.toFixed(1)}s` : ` ok ${overUnder.toFixed(1)}s`}, ` +
 				`placed at ${clipStart.toFixed(1)}s (event ${event.startTime.toFixed(1)}s–${event.endTime.toFixed(1)}s)`,
 		);
 
