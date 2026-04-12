@@ -242,17 +242,16 @@ export async function addVoiceover(
 
 		const duration = await getAudioDuration(clipPath);
 
-		// Center narration within the event window so the spoken description
-		// aligns with visual action (query typing + answer display), rather
-		// than starting at the exact query-send moment and spoiling the answer.
-		const eventDuration = event.endTime - event.startTime;
-		let clipStart = event.startTime;
-		if (duration < eventDuration) {
-			clipStart = event.startTime + (eventDuration - duration) / 2;
-		}
+		// Start narration 1s after the event begins. This means the narrator
+		// slightly leads the visual action — the viewer hears what's about to
+		// happen just before it appears, which feels natural and engaging.
+		// Better than lagging behind the visuals where narration describes
+		// something the viewer already saw.
+		const clipStart = event.startTime + 1;
 
+		const evtDur = event.endTime - event.startTime;
 		onProgress?.(
-			`  Clip ${i + 1}: TTS=${duration.toFixed(1)}s, event=${eventDuration.toFixed(1)}s, ` +
+			`  Clip ${i + 1}: TTS=${duration.toFixed(1)}s, event=${evtDur.toFixed(1)}s, ` +
 				`placed at ${clipStart.toFixed(1)}s (event ${event.startTime.toFixed(1)}s–${event.endTime.toFixed(1)}s)`,
 		);
 
