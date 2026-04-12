@@ -192,13 +192,23 @@ export async function addVoiceover(
 	);
 
 	// Build segments for the narration API
-	// Use 75% of real duration to give TTS timing headroom
+	// Use 60% of real event duration to give TTS timing headroom.
+	// TTS speaks ~2.5 words/sec, and the narrate API targets ~2.2 words/sec
+	// of available duration, so 60% keeps clips comfortably within the window.
 	const segments: NarrationSegment[] = narratableEvents.map((e) => ({
 		action: e.action,
 		query: e.action.startsWith("query-") ? e.label : undefined,
 		response: e.response?.slice(0, 500),
-		availableDuration: Math.min(e.endTime - e.startTime, 20) * 0.75,
+		availableDuration: (e.endTime - e.startTime) * 0.6,
 	}));
+
+	onProgress?.("Narration budgets:");
+	for (const seg of segments) {
+		const targetWords = Math.round(seg.availableDuration * 2.2);
+		onProgress?.(
+			`  ${seg.action}: budget=${seg.availableDuration.toFixed(1)}s, ~${targetWords} words`,
+		);
+	}
 
 	// Try LLM narration, fall back to templates on failure
 	let llmNarrations: Map<string, string> | null = null;
