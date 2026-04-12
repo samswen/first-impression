@@ -101,6 +101,15 @@ async function loadPageForSnapshot(
 	log(
 		`[nav] status=${navResponse?.status() ?? "?"} cf-mitigated=${cfMitigated || "none"} load=${loadDuration}s url=${page.url().slice(0, 120)}`,
 	);
+	// Wait for JS frameworks to hydrate, carousels to init, animations to fire
+	if (cfMitigated !== "challenge") {
+		try {
+			await page.waitForLoadState("networkidle", { timeout: 10_000 });
+		} catch {
+			// Some sites never reach networkidle
+		}
+	}
+
 	if (cfMitigated === "challenge") {
 		log("Cloudflare challenge detected, attempting to solve...");
 		const solveStart = Date.now();
