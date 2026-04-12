@@ -19,6 +19,8 @@ interface QueueTask {
 	widgetUrl?: string;
 	queries?: string[];
 	force?: boolean;
+	snapshotUrl?: string;
+	snapshotMobileUrl?: string;
 }
 
 // ─── Config ──────────────────────────────────────────────────────────
@@ -52,6 +54,9 @@ function buildCliArgs(task: QueueTask): string[] {
 	if (task.queries && task.queries.length > 0) {
 		args.push("--queries", ...task.queries);
 	}
+	if (task.snapshotUrl) args.push("--snapshot-url", task.snapshotUrl);
+	if (task.snapshotMobileUrl)
+		args.push("--snapshot-mobile-url", task.snapshotMobileUrl);
 	return args;
 }
 

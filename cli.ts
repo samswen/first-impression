@@ -31,6 +31,8 @@ interface Config {
 	force: boolean;
 	recording?: string;
 	from: number;
+	snapshotUrl?: string;
+	snapshotMobileUrl?: string;
 }
 
 interface PipelineState {
@@ -96,6 +98,8 @@ Options:
   --url <url>            Override target website URL (default: from tenant info)
   --widget-url <url>     Override widget script URL (default: from tenant subdomain)
   --queries "q1" "q2"    Override queries (default: AI-generated or suggested actions)
+  --snapshot-url <url>   Pre-captured desktop screenshot URL (skips headless capture)
+  --snapshot-mobile-url <url>  Pre-captured mobile screenshot URL
   --recording <id>       Resume an existing recording (required with --from)
   --from <step>          Start from step 1-6 (default: 1)
   --headed               Show browser during recording
@@ -151,6 +155,8 @@ async function parseConfig(): Promise<Config | null> {
 		force: process.argv.includes("--force"),
 		recording: getArg("--recording"),
 		from: Number(getArg("--from") || "1"),
+		snapshotUrl: getArg("--snapshot-url"),
+		snapshotMobileUrl: getArg("--snapshot-mobile-url"),
 	};
 }
 
@@ -330,6 +336,29 @@ async function run() {
 		);
 	}
 
+	// ── Download pre-captured snapshots (if provided) ────────────
+
+	const downloadSnapshot = async (url: string, filename: string) => {
+		log(`Downloading ${filename} from ${url}`);
+		const res = await fetch(url);
+		if (!res.ok) throw new Error(`Failed to download ${filename}: ${res.status}`);
+		const buf = Buffer.from(await res.arrayBuffer());
+		// dir may not exist yet (set in step 2), so defer writing
+		return { filename, buf };
+	};
+
+	const pendingSnapshots: { filename: string; buf: Buffer }[] = [];
+	if (cfg.snapshotUrl) {
+		pendingSnapshots.push(
+			await downloadSnapshot(cfg.snapshotUrl, "snapshot.png"),
+		);
+	}
+	if (cfg.snapshotMobileUrl) {
+		pendingSnapshots.push(
+			await downloadSnapshot(cfg.snapshotMobileUrl, "snapshot-mobile.png"),
+		);
+	}
+
 	// ── [2/6] Record ──────────────────────────────────────────────
 
 	if (cfg.from <= 2) {
@@ -347,6 +376,14 @@ async function run() {
 		);
 		dir = result.dir;
 		console.log(`  Recording ID: ${result.id}`);
+
+		// Write pre-captured snapshots into the recording dir before recording starts
+		for (const snap of pendingSnapshots) {
+			const dest = path.join(dir, snap.filename);
+			fs.writeFileSync(dest, snap.buf);
+			log(`Wrote ${snap.filename} (${snap.buf.length} bytes)`);
+		}
+
 		await result.promise;
 		state.completedStep = 2;
 		saveState(dir, state);
