@@ -178,7 +178,7 @@ export async function addVoiceover(
 	const businessName = tenantInfo.setup.businessName || "the website";
 
 	// Log full timeline for diagnostics
-	onProgress?.("Timeline events:");
+	onProgress?.("Timeline events (wall-clock):");
 	for (const e of timeline) {
 		const dur = (e.endTime - e.startTime).toFixed(1);
 		onProgress?.(
@@ -186,8 +186,24 @@ export async function addVoiceover(
 		);
 	}
 
+	// Measure actual video duration — Playwright's wall-clock timeline often
+	// diverges from the recorded video (variable frame rate, rendering gaps).
+	// Scale all timestamps so narration placement matches the real video.
+	const videoDuration = await getAudioDuration(videoPath);
+	const timelineEnd = timeline[timeline.length - 1]?.endTime || 0;
+	const timeScale = timelineEnd > 0 ? videoDuration / timelineEnd : 1;
+	onProgress?.(
+		`Video: ${videoDuration.toFixed(1)}s, timeline: ${timelineEnd.toFixed(1)}s, scale: ${timeScale.toFixed(3)}`,
+	);
+
+	const scaledTimeline: TimelineEntry[] = timeline.map((e) => ({
+		...e,
+		startTime: e.startTime * timeScale,
+		endTime: e.endTime * timeScale,
+	}));
+
 	// 1. Build narration-worthy events and try LLM narration
-	const narratableEvents = timeline.filter(
+	const narratableEvents = scaledTimeline.filter(
 		(e) => e.action === "open-widget" || e.action.startsWith("query-"),
 	);
 
@@ -323,17 +339,8 @@ export async function addVoiceover(
 
 	onProgress?.(`${clips.length} clips ready, composing audio mix...`);
 
-	// 2. Get video duration and check if audio extends past it
-	const { stdout: videoDurOut } = await execP("ffprobe", [
-		"-v",
-		"error",
-		"-show_entries",
-		"format=duration",
-		"-of",
-		"csv=p=0",
-		videoPath,
-	]);
-	const videoDuration = Number.parseFloat(videoDurOut.trim());
+	// 2. Check if audio extends past the video
+	// (videoDuration already measured above for timeline scaling)
 
 	// Find the latest point any audio clip reaches
 	const audioEndTime = Math.max(...clips.map((c) => c.startTime + c.duration));
