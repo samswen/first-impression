@@ -100,6 +100,7 @@ interface NarrationClip {
 	audioPath: string;
 	startTime: number;
 	duration: number;
+	pushed?: boolean;
 }
 
 /**
@@ -181,8 +182,15 @@ export async function addVoiceover(
 	onProgress?.("Timeline events (wall-clock):");
 	for (const e of timeline) {
 		const dur = (e.endTime - e.startTime).toFixed(1);
+		const times =
+			e.sendTime != null
+				? ` send=${e.sendTime.toFixed(1)}s` +
+					(e.responseEndTime != null
+						? ` respEnd=${e.responseEndTime.toFixed(1)}s`
+						: "")
+				: "";
 		onProgress?.(
-			`  ${e.action}: ${e.startTime.toFixed(1)}s–${e.endTime.toFixed(1)}s (${dur}s) "${e.label}"`,
+			`  ${e.action}: ${e.startTime.toFixed(1)}s–${e.endTime.toFixed(1)}s (${dur}s)${times} "${e.label}"`,
 		);
 	}
 
@@ -200,6 +208,9 @@ export async function addVoiceover(
 		...e,
 		startTime: e.startTime * timeScale,
 		endTime: e.endTime * timeScale,
+		sendTime: e.sendTime != null ? e.sendTime * timeScale : undefined,
+		responseEndTime:
+			e.responseEndTime != null ? e.responseEndTime * timeScale : undefined,
 	}));
 
 	// 1. Build narration-worthy events and try LLM narration
@@ -298,40 +309,60 @@ export async function addVoiceover(
 		throw new Error("No narration clips generated");
 	}
 
-	// Adjust start times: prevent overlap AND close excessive gaps.
-	// If a clip overlaps the previous, delay it. If there's more than 2s
-	// of dead air, pull it forward — the narrator leads the action rather
-	// than leaving the viewer in silence.
+	// Step 1: Push-forward cascade — guarantee 1s silence between clips.
+	// If a clip would start less than 1s after the previous clip ends, push it
+	// forward so there's exactly 1s of gap.
 	for (let i = 1; i < clips.length; i++) {
-		const prevEnd = clips[i - 1].startTime + clips[i - 1].duration;
-		if (clips[i].startTime < prevEnd) {
-			const delay = prevEnd - clips[i].startTime;
+		const minStart = clips[i - 1].startTime + clips[i - 1].duration + 1;
+		if (clips[i].startTime < minStart) {
 			onProgress?.(
-				`Clip ${i + 1} delayed by ${delay.toFixed(1)}s to avoid overlap`,
+				`Clip ${i + 1} pushed from ${clips[i].startTime.toFixed(1)}s to ${minStart.toFixed(1)}s (cascade)`,
 			);
-			clips[i].startTime = prevEnd;
-		} else if (clips[i].startTime - prevEnd > 2) {
-			const pulled = clips[i].startTime - (prevEnd + 1);
-			onProgress?.(
-				`Clip ${i + 1} pulled forward by ${pulled.toFixed(1)}s to close gap`,
-			);
-			clips[i].startTime = prevEnd + 1;
+			clips[i].startTime = minStart;
+			clips[i].pushed = true;
 		}
 	}
 
-	// Log final clip schedule after overlap adjustments
+	// Step 2: Optimize — slide unpushed query clips toward sendTime so
+	// narration syncs with the AI response appearing, not the typing.
+	for (let i = 0; i < clips.length; i++) {
+		if (clips[i].pushed) continue;
+		const { sendTime } = clips[i].event;
+		if (sendTime == null) continue;
+
+		const nextStart =
+			i + 1 < clips.length ? clips[i + 1].startTime : clips[i].event.endTime;
+		const maxSlide = nextStart - (clips[i].startTime + clips[i].duration + 1);
+		const targetSlide = sendTime - clips[i].startTime;
+		const slide = Math.max(0, Math.min(maxSlide, targetSlide));
+		if (slide > 0) {
+			onProgress?.(
+				`Clip ${i + 1} slid +${slide.toFixed(1)}s toward sendTime ${sendTime.toFixed(1)}s`,
+			);
+			clips[i].startTime += slide;
+		}
+	}
+
+	// Log final clip schedule
 	onProgress?.("Final clip schedule:");
 	for (let i = 0; i < clips.length; i++) {
 		const c = clips[i];
 		const clipEnd = c.startTime + c.duration;
-		const evtMid = (c.event.startTime + c.event.endTime) / 2;
-		const clipMid = c.startTime + c.duration / 2;
-		const drift = clipMid - evtMid;
+		const idealStart = c.event.action.startsWith("query-")
+			? c.event.startTime + 1
+			: c.event.startTime;
+		const gap =
+			i > 0
+				? c.startTime - (clips[i - 1].startTime + clips[i - 1].duration)
+				: null;
+		const status = c.pushed ? "PUSHED" : "ok";
 		onProgress?.(
-			`  Clip ${i + 1} [${c.event.action}]: ` +
-				`audio ${c.startTime.toFixed(1)}s–${clipEnd.toFixed(1)}s (${c.duration.toFixed(1)}s), ` +
-				`event ${c.event.startTime.toFixed(1)}s–${c.event.endTime.toFixed(1)}s, ` +
-				`drift=${drift > 0 ? "+" : ""}${drift.toFixed(1)}s`,
+			`  Clip ${i + 1} [${c.event.action}] ${status}: ` +
+				`ideal=${idealStart.toFixed(1)}s actual=${c.startTime.toFixed(1)}s–${clipEnd.toFixed(1)}s (${c.duration.toFixed(1)}s)` +
+				(gap != null ? ` gap=${gap.toFixed(1)}s` : "") +
+				(c.event.sendTime != null
+					? ` sendTime=${c.event.sendTime.toFixed(1)}s`
+					: ""),
 		);
 	}
 

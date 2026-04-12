@@ -13,6 +13,7 @@ import {
 	MIN_QUERY_DURATION,
 	MIN_QUERY_WITH_FORM_DURATION,
 	PAUSE_AFTER_RESPONSE,
+	PAUSE_AFTER_TYPE,
 	resetZoom,
 	sendMessage,
 	TYPING_DELAY,
@@ -48,6 +49,8 @@ export interface TimelineEntry {
 	startTime: number;
 	endTime: number;
 	response?: string;
+	sendTime?: number;
+	responseEndTime?: number;
 }
 
 export interface ProgressEvent {
@@ -929,6 +932,7 @@ body { ${bgStyle} }
 				label: this.config.url,
 				startTime: 0,
 				endTime: this.now(),
+				sendTime: 0,
 			});
 			emit("action-end", "Page loaded", "page-load");
 
@@ -953,6 +957,7 @@ body { ${bgStyle} }
 				label: "Open chat widget",
 				startTime: openStart,
 				endTime: this.now(),
+				sendTime: openStart,
 			});
 			emit("action-end", "Widget opened", "open-widget");
 
@@ -966,6 +971,7 @@ body { ${bgStyle} }
 				label: "Zoom into widget",
 				startTime: zoomStart,
 				endTime: this.now(),
+				sendTime: zoomStart,
 			});
 			emit("action-end", "Zoomed in", "zoom-in");
 
@@ -978,9 +984,15 @@ body { ${bgStyle} }
 				const queryStart = this.now();
 				emit("action-start", `Sending: "${query}"`, actionName);
 
+				// Calculate sendTime: typing + pause + click delay are deterministic
+				const sendTime =
+					queryStart +
+					(query.length * TYPING_DELAY + PAUSE_AFTER_TYPE + 500) / 1000;
+
 				await sendMessage(page, widget, query, {
 					skipWaitBefore: i === 0,
 				});
+				const responseEndTime = this.now();
 
 				// Extract AI response text from the last assistant bubble
 				const responseText = await widget
@@ -1060,6 +1072,8 @@ body { ${bgStyle} }
 					startTime: queryStart,
 					endTime: this.now(),
 					response: fullResponse,
+					sendTime,
+					responseEndTime,
 				});
 				emit("action-end", `Query ${i + 1} complete`, actionName);
 			}
@@ -1075,6 +1089,7 @@ body { ${bgStyle} }
 				label: "Zoom out to full view",
 				startTime: zoomOutStart,
 				endTime: this.now(),
+				sendTime: zoomOutStart,
 			});
 			emit("action-end", "Zoomed out", "zoom-out");
 
