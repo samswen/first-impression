@@ -10,6 +10,11 @@
  */
 
 import type { Page } from "playwright";
+import {
+	getCapSolverProxy,
+	solveCloudflareChallenge,
+	solveTurnstileToken,
+} from "./capsolver";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -237,7 +242,169 @@ export async function solveTurnstile(
 		return { solved: true, attempts: 0 };
 	}
 
-	console.log("[TurnstileSolver] Challenge detected, looking for checkbox...");
+	console.log("[TurnstileSolver] Challenge detected");
+
+	// -----------------------------------------------------------------
+	// Phase 1: Try CapSolver (primary)
+	// -----------------------------------------------------------------
+	if (process.env.CAPSOLVER_API_KEY) {
+		const capsolverResult = await tryCapSolver(page);
+		if (capsolverResult) return capsolverResult;
+		console.log(
+			"[TurnstileSolver] CapSolver failed, falling back to click solver",
+		);
+	}
+
+	// -----------------------------------------------------------------
+	// Phase 2: Click-based solver (fallback)
+	// -----------------------------------------------------------------
+	return clickBasedSolve(page, { maxAttempts, timeout });
+}
+
+// ---------------------------------------------------------------------------
+// CapSolver integration (Playwright)
+// ---------------------------------------------------------------------------
+
+async function tryCapSolver(page: Page): Promise<TurnstileSolveResult | null> {
+	try {
+		const url = page.url();
+
+		// Detect challenge type
+		const turnstileInfo = await page.evaluate(() => {
+			const el = document.querySelector(
+				'.cf-turnstile, [data-sitekey], [name="cf-turnstile-response"]',
+			);
+			if (!el) return null;
+			const siteKey =
+				el.getAttribute("data-sitekey") ||
+				el.closest("[data-sitekey]")?.getAttribute("data-sitekey");
+			return { hasTurnstile: true, siteKey: siteKey || null };
+		});
+
+		if (turnstileInfo?.hasTurnstile && turnstileInfo.siteKey) {
+			// Turnstile widget — use AntiTurnstileTaskProxyLess
+			console.log(
+				"[TurnstileSolver] Turnstile widget detected, using CapSolver token solve",
+			);
+			const result = await solveTurnstileToken({
+				websiteURL: url,
+				websiteKey: turnstileInfo.siteKey,
+			});
+
+			if ("error" in result) {
+				console.log(
+					`[TurnstileSolver] CapSolver token failed: ${result.error}`,
+				);
+				return null;
+			}
+
+			// Inject token and trigger callback
+			await page.evaluate((token: string) => {
+				const input = document.querySelector(
+					'[name="cf-turnstile-response"]',
+				) as HTMLInputElement | null;
+				if (input) {
+					input.value = token;
+					const widgetEl = document.querySelector(".cf-turnstile");
+					const cbName = widgetEl?.getAttribute("data-callback");
+					if (cbName && typeof (window as any)[cbName] === "function") {
+						(window as any)[cbName](token);
+					}
+				}
+				const form = input?.closest("form");
+				if (form) form.submit();
+			}, result.token);
+
+			// Wait for navigation after token injection
+			try {
+				await page.waitForURL("**/*", {
+					timeout: 10000,
+					waitUntil: "networkidle",
+				});
+			} catch {
+				await new Promise((r) => setTimeout(r, 3000));
+			}
+
+			if (!(await isChallengePage(page))) {
+				console.log("[TurnstileSolver] Solved via CapSolver (Turnstile token)");
+				return { solved: true, attempts: 1 };
+			}
+		} else {
+			// Full JS interstitial — use AntiCloudflareTask with proxy
+			const proxy = await getCapSolverProxy();
+			if (!proxy) {
+				console.log(
+					"[TurnstileSolver] No proxy available for AntiCloudflareTask",
+				);
+				return null;
+			}
+
+			console.log(
+				"[TurnstileSolver] JS interstitial detected, using CapSolver AntiCloudflareTask",
+			);
+			const html = await page.content();
+			const userAgent = await page.evaluate(() => navigator.userAgent);
+			const result = await solveCloudflareChallenge({
+				websiteURL: url,
+				proxy,
+				html,
+				userAgent,
+			});
+
+			if ("error" in result) {
+				console.log(
+					`[TurnstileSolver] CapSolver challenge failed: ${result.error}`,
+				);
+				return null;
+			}
+
+			// Inject cookies via Playwright context
+			const domain = new URL(url).hostname;
+			const cookieEntries = Object.entries(result.cookies);
+			if (cookieEntries.length > 0) {
+				await page.context().addCookies(
+					cookieEntries.map(([name, value]) => ({
+						name,
+						value,
+						domain: domain.startsWith(".") ? domain : `.${domain}`,
+						path: "/",
+						httpOnly: true,
+						secure: true,
+					})),
+				);
+			}
+
+			// Reload page with the new cookies
+			await page.reload({ waitUntil: "networkidle" });
+
+			if (!(await isChallengePage(page))) {
+				console.log(
+					"[TurnstileSolver] Solved via CapSolver (AntiCloudflareTask)",
+				);
+				return { solved: true, attempts: 1 };
+			}
+		}
+	} catch (err) {
+		console.error(
+			"[TurnstileSolver] CapSolver error:",
+			err instanceof Error ? err.message : err,
+		);
+	}
+
+	return null;
+}
+
+// ---------------------------------------------------------------------------
+// Click-based solver (original logic, unchanged)
+// ---------------------------------------------------------------------------
+
+async function clickBasedSolve(
+	page: Page,
+	options: { maxAttempts: number; timeout: number },
+): Promise<TurnstileSolveResult> {
+	const { maxAttempts, timeout } = options;
+
+	console.log("[TurnstileSolver] Looking for checkbox...");
 
 	// Poll for checkbox — widget may take time to render
 	let target: ClickTarget | null = null;
@@ -252,7 +419,6 @@ export async function solveTurnstile(
 		return { solved: false, attempts: 0, error: "No checkbox found" };
 	}
 
-	// Phase 2: Try clicking the checkbox
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		try {
 			const stillChallenge = await isChallengePage(page);
@@ -261,7 +427,6 @@ export async function solveTurnstile(
 				return { solved: true, attempts: attempt };
 			}
 
-			// Re-find target on retries (position may shift)
 			if (attempt > 1) {
 				target = await findCheckboxTarget(page);
 			}
@@ -275,14 +440,12 @@ export async function solveTurnstile(
 				`[TurnstileSolver] Click attempt ${attempt}/${maxAttempts} at (${Math.round(target.x)}, ${Math.round(target.y)}) ${Math.round(target.width)}x${Math.round(target.height)}`,
 			);
 
-			// Click position: center for small elements, left-side for wide widgets
 			const isSmallCheckbox = target.width < 100;
 			const clickX = isSmallCheckbox
 				? target.x + target.width / 2 + (Math.random() - 0.5) * 4
 				: target.x + 28 + Math.random() * 8;
 			const clickY = target.y + target.height / 2 + (Math.random() - 0.5) * 4;
 
-			// Human-like mouse movement
 			const viewport = page.viewportSize() || { width: 1920, height: 1080 };
 			const startX = rand(100, viewport.width * 0.7);
 			const startY = rand(100, viewport.height * 0.7);
@@ -320,7 +483,6 @@ export async function solveTurnstile(
 				`[TurnstileSolver] Clicked (${Math.round(clickX)}, ${Math.round(clickY)})`,
 			);
 
-			// Wait for resolution
 			try {
 				await page.waitForURL("**/*", {
 					timeout,
