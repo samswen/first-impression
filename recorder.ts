@@ -976,6 +976,7 @@ body { ${bgStyle} }
 				// Handle contact form — check after every response since the agent
 				// can request contact info for any query, not just predictable ones.
 				// Only fill once per session; the form may linger in the DOM after submission.
+				let filledFormThisQuery = false;
 				if (!formSubmitted) {
 					const form = panel.locator(".chat-followup-form");
 					const hasForm = await form
@@ -1018,15 +1019,21 @@ body { ${bgStyle} }
 
 						await page.waitForTimeout(PAUSE_AFTER_RESPONSE);
 						formSubmitted = true;
+						filledFormThisQuery = true;
 					}
 				}
+
+				// Append form context to response if a contact form was filled during this query
+				const fullResponse = filledFormThisQuery
+					? `${responseText?.trim() || ""} [User then fills out a contact form with name and email, and submits it to complete the order.]`
+					: responseText?.trim() || undefined;
 
 				this.timeline.push({
 					action: actionName,
 					label: query,
 					startTime: queryStart,
 					endTime: this.now(),
-					response: responseText?.trim() || undefined,
+					response: fullResponse,
 				});
 				emit("action-end", `Query ${i + 1} complete`, actionName);
 			}
