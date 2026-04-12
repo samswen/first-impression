@@ -792,24 +792,52 @@ export async function composeVideo(
 		throw new Error(`Main video ${mainVideo} not found`);
 	}
 
+	// Log durations of each part
+	const getDuration = async (p: string): Promise<number> => {
+		try {
+			const { stdout } = await execP("ffprobe", [
+				"-v",
+				"error",
+				"-show_entries",
+				"format=duration",
+				"-of",
+				"csv=p=0",
+				p,
+			]);
+			return Number.parseFloat(stdout.trim());
+		} catch {
+			return 0;
+		}
+	};
+
 	// Build concat list
 	const parts: string[] = [];
+	let totalComposeDuration = 0;
+
 	if (fs.existsSync(introPath)) {
+		const introDur = await getDuration(introPath);
 		parts.push(`file '${introPath}'`);
-		onProgress?.("Including intro...");
+		onProgress?.(`Including intro... (${introDur.toFixed(1)}s)`);
+		totalComposeDuration += introDur;
 	} else {
 		onProgress?.("No intro found, skipping...");
 	}
 
+	const mainDur = await getDuration(mainPath);
 	parts.push(`file '${mainPath}'`);
-	onProgress?.(`Main video: ${mainVideo}`);
+	onProgress?.(`Main video: ${mainVideo} (${mainDur.toFixed(1)}s)`);
+	totalComposeDuration += mainDur;
 
 	if (fs.existsSync(outroPath)) {
+		const outroDur = await getDuration(outroPath);
 		parts.push(`file '${outroPath}'`);
-		onProgress?.("Including outro...");
+		onProgress?.(`Including outro... (${outroDur.toFixed(1)}s)`);
+		totalComposeDuration += outroDur;
 	} else {
 		onProgress?.("No outro found, skipping...");
 	}
+
+	onProgress?.(`Expected final duration: ${totalComposeDuration.toFixed(1)}s`);
 
 	const concatListPath = path.join(dir, "final-concat.txt");
 	fs.writeFileSync(concatListPath, `${parts.join("\n")}\n`);
@@ -891,6 +919,10 @@ export async function composeVideo(
 
 	const stat = fs.statSync(outputPath);
 	const sizeMB = stat.size / 1024 / 1024;
+	const finalDur = await getDuration(outputPath);
+	onProgress?.(
+		`Final video: ${sizeMB.toFixed(1)}MB, ${finalDur.toFixed(1)}s`,
+	);
 	return { outputFile: "final.webm", sizeMB };
 }
 

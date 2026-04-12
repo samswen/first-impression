@@ -177,6 +177,15 @@ export async function addVoiceover(
 		"the AI assistant";
 	const businessName = tenantInfo.setup.businessName || "the website";
 
+	// Log full timeline for diagnostics
+	onProgress?.("Timeline events:");
+	for (const e of timeline) {
+		const dur = (e.endTime - e.startTime).toFixed(1);
+		onProgress?.(
+			`  ${e.action}: ${e.startTime.toFixed(1)}s–${e.endTime.toFixed(1)}s (${dur}s) "${e.label}"`,
+		);
+	}
+
 	// 1. Build narration-worthy events and try LLM narration
 	const narratableEvents = timeline.filter(
 		(e) => e.action === "open-widget" || e.action.startsWith("query-"),
@@ -242,6 +251,11 @@ export async function addVoiceover(
 			clipStart = event.startTime + (eventDuration - duration) / 2;
 		}
 
+		onProgress?.(
+			`  Clip ${i + 1}: TTS=${duration.toFixed(1)}s, event=${eventDuration.toFixed(1)}s, ` +
+				`placed at ${clipStart.toFixed(1)}s (event ${event.startTime.toFixed(1)}s–${event.endTime.toFixed(1)}s)`,
+		);
+
 		clips.push({
 			event,
 			text,
@@ -266,6 +280,22 @@ export async function addVoiceover(
 			);
 			clips[i].startTime = prevEnd;
 		}
+	}
+
+	// Log final clip schedule after overlap adjustments
+	onProgress?.("Final clip schedule:");
+	for (let i = 0; i < clips.length; i++) {
+		const c = clips[i];
+		const clipEnd = c.startTime + c.duration;
+		const evtMid = (c.event.startTime + c.event.endTime) / 2;
+		const clipMid = c.startTime + c.duration / 2;
+		const drift = clipMid - evtMid;
+		onProgress?.(
+			`  Clip ${i + 1} [${c.event.action}]: ` +
+				`audio ${c.startTime.toFixed(1)}s–${clipEnd.toFixed(1)}s (${c.duration.toFixed(1)}s), ` +
+				`event ${c.event.startTime.toFixed(1)}s–${c.event.endTime.toFixed(1)}s, ` +
+				`drift=${drift > 0 ? "+" : ""}${drift.toFixed(1)}s`,
+		);
 	}
 
 	// Save clip manifest for later listing
@@ -299,6 +329,11 @@ export async function addVoiceover(
 		? Math.ceil(audioEndTime - videoDuration + 0.5)
 		: 0;
 	const totalDuration = Math.max(videoDuration, audioEndTime + 0.5);
+
+	onProgress?.(
+		`Video duration: ${videoDuration.toFixed(1)}s, audio ends: ${audioEndTime.toFixed(1)}s, ` +
+			`total: ${totalDuration.toFixed(1)}s${needsExtend ? `, extending by ${extendBy}s` : ""}`,
+	);
 
 	// 3. If video needs extending, extract last frame and make a short freeze clip,
 	//    then concat with the original — much faster than re-encoding the whole video.
