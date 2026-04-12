@@ -7,6 +7,8 @@
  * Fetches proxy bypass domains from rag-chatbot on first use.
  */
 
+import { getStickyPort } from "./capsolver";
+
 interface PlaywrightProxy {
 	server: string;
 	username: string;
@@ -25,8 +27,10 @@ function parseProxy(): PlaywrightProxy | null {
 	if (!uri) return null;
 
 	const parsed = new URL(uri);
+	// When CapSolver is configured, use sticky port so browser and solver share exit IP
+	const port = process.env.CAPSOLVER_API_KEY ? getStickyPort() : parsed.port;
 	return {
-		server: `${parsed.protocol}//${parsed.hostname}:${parsed.port}`,
+		server: `${parsed.protocol}//${parsed.hostname}:${port}`,
 		username: decodeURIComponent(parsed.username),
 		password: decodeURIComponent(parsed.password),
 	};

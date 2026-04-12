@@ -36,6 +36,19 @@ interface GetTaskResultResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Sticky port — DataImpulse ports 10000-19999 give same exit IP for ~30 min
+// ---------------------------------------------------------------------------
+
+let _stickyPort: number | null = null;
+
+export function getStickyPort(): number {
+	if (_stickyPort === null) {
+		_stickyPort = 10000 + Math.floor(Math.random() * 10000);
+	}
+	return _stickyPort;
+}
+
+// ---------------------------------------------------------------------------
 // Proxy helper — parse from PROXY_URLS env var
 // ---------------------------------------------------------------------------
 
@@ -52,7 +65,7 @@ export async function getCapSolverProxy(): Promise<ProxyInfo | null> {
 		}
 		return {
 			host,
-			port: parsed.port,
+			port: String(getStickyPort()),
 			username: decodeURIComponent(parsed.username),
 			password: decodeURIComponent(parsed.password),
 		};
