@@ -232,11 +232,21 @@ export async function addVoiceover(
 		fs.writeFileSync(clipPath, audioBuffer);
 
 		const duration = await getAudioDuration(clipPath);
+
+		// Center narration within the event window so the spoken description
+		// aligns with visual action (query typing + answer display), rather
+		// than starting at the exact query-send moment and spoiling the answer.
+		const eventDuration = event.endTime - event.startTime;
+		let clipStart = event.startTime;
+		if (duration < eventDuration) {
+			clipStart = event.startTime + (eventDuration - duration) / 2;
+		}
+
 		clips.push({
 			event,
 			text,
 			audioPath: clipPath,
-			startTime: event.startTime,
+			startTime: clipStart,
 			duration,
 		});
 	}
