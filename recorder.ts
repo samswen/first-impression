@@ -413,64 +413,43 @@ async function loadPageForSnapshot(
 			);
 		}
 
+		// NOTE: No named function expressions inside page.evaluate —
+		// esbuild adds __name() decorators that don't exist in the browser context.
 		const fixResults = await page.evaluate(() => {
 			const results: string[] = [];
-
-			// Helper: check if an image URL is likely a black/blank frame
-			// by loading it into a small canvas and checking average brightness
-			const isBlackPoster = (video: HTMLVideoElement): boolean => {
-				if (!video.poster) return false;
-				// Poster images from video frame 0 are often tiny files (<20KB for 1920w)
-				// because they're solid black or near-black (video fade-in).
-				// We can't async-fetch here, so check if the poster is already cached
-				// by creating an img and checking if it loads synchronously.
-				try {
-					const testImg = new Image();
-					testImg.src = video.poster;
-					if (!testImg.complete || testImg.naturalWidth === 0) return false;
-					const canvas = document.createElement("canvas");
-					const size = 32; // Sample at small size for speed
-					canvas.width = size;
-					canvas.height = size;
-					const ctx = canvas.getContext("2d");
-					if (!ctx) return false;
-					ctx.drawImage(testImg, 0, 0, size, size);
-					const data = ctx.getImageData(0, 0, size, size).data;
-					let totalBrightness = 0;
-					for (let i = 0; i < data.length; i += 4) {
-						totalBrightness += data[i] + data[i + 1] + data[i + 2];
-					}
-					const avgBrightness = totalBrightness / (size * size * 3);
-					return avgBrightness < 10; // Nearly black
-				} catch {
-					return false;
-				}
-			};
 
 			for (const video of document.querySelectorAll("video")) {
 				if (video.error || video.readyState < 2) {
 					const w = video.offsetWidth;
 					const h = video.offsetHeight;
 
-					// Copy positioning styles for any replacement element
-					const copyPosition = (
-						el: HTMLElement,
-						source: CSSStyleDeclaration,
-					) => {
-						if (
-							source.position === "absolute" ||
-							source.position === "fixed"
-						) {
-							el.style.position = source.position;
-							el.style.top = source.top;
-							el.style.left = source.left;
-							el.style.right = source.right;
-							el.style.bottom = source.bottom;
-							el.style.zIndex = source.zIndex;
+					// Check if poster is a black/blank frame (e.g. video fade-in)
+					let posterIsBlack = false;
+					if (video.poster) {
+						try {
+							const testImg = new Image();
+							testImg.src = video.poster;
+							if (testImg.complete && testImg.naturalWidth > 0) {
+								const c = document.createElement("canvas");
+								c.width = 32;
+								c.height = 32;
+								const cx = c.getContext("2d");
+								if (cx) {
+									cx.drawImage(testImg, 0, 0, 32, 32);
+									const px = cx.getImageData(0, 0, 32, 32).data;
+									let total = 0;
+									for (let i = 0; i < px.length; i += 4) {
+										total += px[i] + px[i + 1] + px[i + 2];
+									}
+									posterIsBlack = total / (32 * 32 * 3) < 10;
+								}
+							}
+						} catch {
+							// ignore
 						}
-					};
+					}
 
-					if (video.poster && !isBlackPoster(video)) {
+					if (video.poster && !posterIsBlack) {
 						// Replace with poster image (only if poster is not black)
 						const img = document.createElement("img");
 						img.src = video.poster;
@@ -478,11 +457,20 @@ async function loadPageForSnapshot(
 						img.style.height = h ? `${h}px` : "auto";
 						img.style.objectFit = "cover";
 						img.style.display = "block";
-						copyPosition(img, window.getComputedStyle(video));
+						const cs = window.getComputedStyle(video);
+						if (cs.position === "absolute" || cs.position === "fixed") {
+							img.style.position = cs.position;
+							img.style.top = cs.top;
+							img.style.left = cs.left;
+							img.style.right = cs.right;
+							img.style.bottom = cs.bottom;
+							img.style.zIndex = cs.zIndex;
+						}
 						video.replaceWith(img);
 						results.push(`poster-replace ${w}x${h}`);
 					} else if (w && h && video.readyState >= 1) {
 						// Has metadata — try canvas capture of current frame
+						let captured = false;
 						try {
 							const canvas = document.createElement("canvas");
 							canvas.width = video.videoWidth || w;
@@ -490,21 +478,17 @@ async function loadPageForSnapshot(
 							const ctx = canvas.getContext("2d");
 							if (ctx) {
 								ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-								const data = ctx.getImageData(
+								const px = ctx.getImageData(
 									0,
 									0,
 									canvas.width,
 									canvas.height,
 								).data;
 								let brightness = 0;
-								// Sample every 100th pixel for speed
-								for (let i = 0; i < data.length; i += 400) {
-									brightness += data[i] + data[i + 1] + data[i + 2];
+								for (let i = 0; i < px.length; i += 400) {
+									brightness += px[i] + px[i + 1] + px[i + 2];
 								}
-								const avgBr =
-									brightness / (Math.ceil(data.length / 400) * 3);
-								if (avgBr > 10) {
-									// Non-black frame captured
+								if (brightness / (Math.ceil(px.length / 400) * 3) > 10) {
 									const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
 									const img = document.createElement("img");
 									img.src = dataUrl;
@@ -512,29 +496,38 @@ async function loadPageForSnapshot(
 									img.style.height = `${h}px`;
 									img.style.objectFit = "cover";
 									img.style.display = "block";
-									copyPosition(img, window.getComputedStyle(video));
+									const cs = window.getComputedStyle(video);
+									if (
+										cs.position === "absolute" ||
+										cs.position === "fixed"
+									) {
+										img.style.position = cs.position;
+										img.style.top = cs.top;
+										img.style.left = cs.left;
+										img.style.right = cs.right;
+										img.style.bottom = cs.bottom;
+										img.style.zIndex = cs.zIndex;
+									}
 									video.replaceWith(img);
 									results.push(`canvas-capture ${w}x${h}`);
-									continue;
+									captured = true;
 								}
 							}
 						} catch {
 							// Canvas capture failed (e.g. tainted by CORS)
 						}
-						// Canvas frame is also black — hide the video
-						video.style.visibility = "hidden";
-						results.push(`hidden (black-frame) ${w}x${h}`);
+						if (!captured) {
+							video.style.visibility = "hidden";
+							results.push(`hidden (black-frame) ${w}x${h}`);
+						}
 					} else if (!w || !h) {
-						// No dimensions — just remove it
 						video.remove();
 						results.push("removed (no-dimensions)");
 					} else {
-						// Has dimensions but no usable content — hide
-						const reason = video.poster
-							? "black-poster"
-							: "no-poster";
 						video.style.visibility = "hidden";
-						results.push(`hidden (${reason}) ${w}x${h}`);
+						results.push(
+							`hidden (${video.poster ? "black-poster" : "no-poster"}) ${w}x${h}`,
+						);
 					}
 				} else {
 					video.pause();
