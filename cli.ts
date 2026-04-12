@@ -363,6 +363,19 @@ async function run() {
 
 	if (cfg.from <= 2) {
 		console.log("\n[2/6] Record");
+
+		// Pre-create the recording directory and write snapshots BEFORE
+		// starting the recorder, so its existsSync check finds them
+		const recId = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+		const recDir = path.join(RECORDINGS_DIR, recId);
+		fs.mkdirSync(recDir, { recursive: true });
+
+		for (const snap of pendingSnapshots) {
+			const dest = path.join(recDir, snap.filename);
+			fs.writeFileSync(dest, snap.buf);
+			log(`Wrote ${snap.filename} (${snap.buf.length} bytes)`);
+		}
+
 		const result = startRecording(
 			RECORDINGS_DIR,
 			{
@@ -371,18 +384,12 @@ async function run() {
 				headed: cfg.headed,
 				widgetUrl: state.widgetUrl || undefined,
 				tenantId,
+				recordingId: recId,
 			},
 			(event) => log(event.message),
 		);
 		dir = result.dir;
 		console.log(`  Recording ID: ${result.id}`);
-
-		// Write pre-captured snapshots into the recording dir before recording starts
-		for (const snap of pendingSnapshots) {
-			const dest = path.join(dir, snap.filename);
-			fs.writeFileSync(dest, snap.buf);
-			log(`Wrote ${snap.filename} (${snap.buf.length} bytes)`);
-		}
 
 		await result.promise;
 		state.completedStep = 2;

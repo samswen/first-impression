@@ -431,11 +431,14 @@ export function startRecording(
 		headed?: boolean;
 		widgetUrl?: string;
 		tenantId?: number;
+		recordingId?: string;
 	},
 	onProgress?: (event: ProgressEvent) => void,
 	signal?: AbortSignal,
 ): { id: string; dir: string; promise: Promise<void> } {
-	const id = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+	const id =
+		opts.recordingId ||
+		new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 	const dir = path.join(recordingsDir, id);
 
 	// Save recording config
