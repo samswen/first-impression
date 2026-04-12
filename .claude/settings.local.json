@@ -90,7 +90,11 @@
       "Bash(aws events disable-rule:*)",
       "Bash(aws events:*)",
       "Bash(git stash:*)",
-      "Bash(npx cdk deploy RagChatbotStack --require-approval never)"
+      "Bash(npx cdk deploy RagChatbotStack --require-approval never)",
+      "WebFetch(domain:eprestaurant.com)",
+      "WebFetch(domain:builtwith.com)",
+      "Bash(git -C /Users/sam/projects/first-impression diff)",
+      "Bash(git -C /Users/sam/projects/first-impression commit -m \"$\\(cat <<''EOF''\nFix snapshot capturing black/colorless images on AWS\n\nReplace video-blocking + ffmpeg frame extraction approach with proper\nlazy-load handling: force eager loading, scroll page to trigger\nIntersectionObserver, wait for all images to complete. Videos are\npaused for clean frames or replaced with poster fallback.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }

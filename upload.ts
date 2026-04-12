@@ -237,7 +237,8 @@ export async function publishDemo(
 		files.push({ name: "snapshot-diag.log", contentType: "text/plain" });
 	}
 
-	const hasMobileDiagLog = mobileDiagLogPath && fs.existsSync(mobileDiagLogPath);
+	const hasMobileDiagLog =
+		mobileDiagLogPath && fs.existsSync(mobileDiagLogPath);
 	if (hasMobileDiagLog) {
 		files.push({ name: "snapshot-mobile-diag.log", contentType: "text/plain" });
 	}

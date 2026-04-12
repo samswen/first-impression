@@ -1001,7 +1001,9 @@ export async function publishRecording(
 			? snapshotMobilePath
 			: undefined,
 		diagLogPath: fs.existsSync(diagLogPath) ? diagLogPath : undefined,
-		mobileDiagLogPath: fs.existsSync(mobileDiagLogPath) ? mobileDiagLogPath : undefined,
+		mobileDiagLogPath: fs.existsSync(mobileDiagLogPath)
+			? mobileDiagLogPath
+			: undefined,
 		config,
 		targetUrl: config?.url as string | undefined,
 		widgetUrl: config?.widgetUrl as string | undefined,
