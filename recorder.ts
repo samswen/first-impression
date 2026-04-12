@@ -1071,32 +1071,61 @@ body { ${bgStyle} }
 				throw new Error("No video file found in recording directory");
 			}
 
-			// Rename to raw.webm and re-encode VP8→VP9 for consistent codec
+			// Rename to raw.webm and re-encode VP8→VP9 for consistent codec.
+			// Playwright's VFR encoder compresses idle frames more than active ones,
+			// so the video duration diverges from wall-clock. Use setpts to stretch
+			// the video back to wall-clock time so voiceover placement is accurate.
 			const rawPath = path.join(dir, "raw.webm");
 			fs.renameSync(path.join(dir, videoFile), rawPath);
 
+			const timelineEnd = this.timeline[this.timeline.length - 1]?.endTime || 0;
+			const { stdout: durStr } = await execP("ffprobe", [
+				"-v",
+				"error",
+				"-show_entries",
+				"format=duration",
+				"-of",
+				"csv=p=0",
+				rawPath,
+			]);
+			const vp8Duration = Number.parseFloat(durStr.trim());
+
+			const needsStretch =
+				timelineEnd > 0 &&
+				vp8Duration > 0 &&
+				Math.abs(vp8Duration - timelineEnd) > 1;
+			const ptsFactor = needsStretch ? timelineEnd / vp8Duration : 1;
+
+			if (needsStretch) {
+				emit(
+					"progress",
+					`Video ${vp8Duration.toFixed(1)}s vs timeline ${timelineEnd.toFixed(1)}s, stretching ${ptsFactor.toFixed(3)}x`,
+				);
+			}
+
 			emit("progress", "Re-encoding to VP9...");
 			const vp9TmpPath = path.join(dir, "raw-vp9.webm");
-			await execP(
-				"ffmpeg",
-				[
-					"-i",
-					rawPath,
-					"-c:v",
-					"libvpx-vp9",
-					"-b:v",
-					"2M",
-					"-cpu-used",
-					"4",
-					"-pix_fmt",
-					"yuv420p",
-					"-c:a",
-					"libopus",
-					"-y",
-					vp9TmpPath,
-				],
-				{ timeout: 5 * 60 * 1000, maxBuffer: 10 * 1024 * 1024 },
-			);
+			const ffmpegArgs = [
+				"-i",
+				rawPath,
+				...(needsStretch ? ["-vf", `setpts=PTS*${ptsFactor.toFixed(6)}`] : []),
+				"-c:v",
+				"libvpx-vp9",
+				"-b:v",
+				"2M",
+				"-cpu-used",
+				"4",
+				"-pix_fmt",
+				"yuv420p",
+				"-c:a",
+				"libopus",
+				"-y",
+				vp9TmpPath,
+			];
+			await execP("ffmpeg", ffmpegArgs, {
+				timeout: 5 * 60 * 1000,
+				maxBuffer: 10 * 1024 * 1024,
+			});
 			fs.renameSync(vp9TmpPath, rawPath);
 
 			// Save timeline
