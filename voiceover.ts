@@ -242,12 +242,13 @@ export async function addVoiceover(
 
 		const duration = await getAudioDuration(clipPath);
 
-		// Start narration 1s after the event begins. This means the narrator
-		// slightly leads the visual action — the viewer hears what's about to
-		// happen just before it appears, which feels natural and engaging.
-		// Better than lagging behind the visuals where narration describes
-		// something the viewer already saw.
-		const clipStart = event.startTime + 1;
+		// For query events, start narration 1s after typing begins — the narrator
+		// slightly leads the visual action so the viewer hears what's about to
+		// happen as it unfolds. For other events (open-widget etc.), start at
+		// the event start time since those are brief actions.
+		const clipStart = event.action.startsWith("query-")
+			? event.startTime + 1
+			: event.startTime;
 
 		const evtDur = event.endTime - event.startTime;
 		onProgress?.(
