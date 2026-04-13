@@ -40,15 +40,64 @@ The voiceover clip placement was reworked. When reviewing pipeline output, check
 - A clip marked PUSHED that has a gap > 1.0s to the previous = cascade set pushed unnecessarily
 - Narration starting during typing (before sendTime) for query clips = slide didn't work
 
+## Testing the CFR Recording (x11grab)
+
+The recorder was just switched from Playwright's built-in VFR `recordVideo` to **Xvfb + ffmpeg x11grab** on Linux. This eliminates the video/timeline duration mismatch that caused voice narration to drift out of sync.
+
+### Prerequisites
+
+```bash
+sudo apt-get install -y xvfb x11-utils
+```
+
+### What changed in `recorder.ts`
+
+- On Linux (`process.platform === "linux"`), the recorder:
+  1. Starts Xvfb on `:99` (or reuses if already running)
+  2. Launches Chromium in **headed** mode on the virtual display
+  3. Records the display with `ffmpeg -f x11grab -framerate 30` (constant 30fps)
+  4. Stops ffmpeg by sending `q` to stdin after recording
+  5. **No VP8→VP9 re-encode, no setpts stretch** — the video is already VP9 at wall-clock speed
+- On macOS, the old Playwright VFR + stretch approach is preserved
+
+### What to verify
+
+1. Run a test recording:
+   ```bash
+   npx tsx cli.ts <tenantId> --no-publish
+   ```
+
+2. Check the log for:
+   - `Xvfb started on :99` or `Xvfb already running on :99`
+   - `Video XX.Xs, timeline XX.Xs (CFR, no stretch needed)` — these two numbers should be within ~1s of each other
+   - **No** "stretching X.XXXx" message — that means the old VFR path was used
+
+3. If video and timeline diverge by more than 1s, something is wrong with x11grab capture.
+
+4. Watch the final video and verify:
+   - Narration aligns with what's happening on screen
+   - Voice doesn't finish early or start late relative to visual events
+   - No visual glitches from the x11grab capture
+
+### ffmpeg buffer settings (tuned for 4+ CPU, 16+ GB)
+
+- `probesize 128M` — large input analysis buffer
+- `thread_queue_size 1024` — deep frame queue
+- `threads 4` — encoding threads (adjust if machine has fewer cores)
+
+### Troubleshooting
+
+- **"No video file found — ffmpeg x11grab failed"**: Check ffmpeg stderr. Likely Xvfb didn't start or DISPLAY isn't set. Verify with `xdpyinfo -display :99`.
+- **Black/empty video**: Chromium didn't render to the Xvfb display. Verify `DISPLAY=:99` is set before browser launch.
+- **Video too short**: x11grab should produce wall-clock-accurate duration. If not, check system load — ffmpeg may have dropped frames under heavy CPU pressure.
+
 ## Environment
 
 - Requires `.env` with `RAG_CHATBOT_BASE_URL`, `FIRST_IMPRESSION_API_KEY`, `ELEVENLABS_API_KEY`
 - Needs `ffmpeg`, `ffprobe` on PATH
 - Headless Chromium via Playwright (`npx playwright install chromium`)
-- On headless servers, use `xvfb-run` if Playwright needs a display:
-  ```bash
-  xvfb-run npx tsx cli.ts <tenantId>
-  ```
+- **Linux**: needs `xvfb` and `x11-utils` packages for CFR recording
+- **macOS**: no extra deps, uses Playwright's built-in recorder
 
 ## Pipeline Steps
 

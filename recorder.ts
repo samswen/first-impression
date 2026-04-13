@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -847,22 +847,85 @@ body { ${bgStyle} }
 		// --- Now launch the recording browser and navigate to the ready page ---
 		if (signal?.aborted) throw new Error("Cancelled");
 		emit("progress", "Launching recording browser...");
+
+		// On Linux, use Xvfb + ffmpeg x11grab for constant-frame-rate recording.
+		// Playwright's built-in recordVideo uses a VFR encoder that compresses
+		// idle frames, causing video duration to diverge from wall-clock time.
+		// ffmpeg x11grab captures at a fixed 30fps tied to wall-clock, so the
+		// video duration always matches the timeline — no stretching needed.
+		// On macOS (local dev), Playwright's VFR works fine since the machine
+		// can render at real-time speed.
+		const useX11Grab = process.platform === "linux";
+		const DISPLAY = ":99";
+		let xvfbProc: ChildProcess | null = null;
+		let ffmpegProc: ChildProcess | null = null;
+		const rawPath = path.join(dir, "raw.webm");
+
+		if (useX11Grab) {
+			// Start Xvfb if not already running
+			try {
+				await execP("xdpyinfo", ["-display", DISPLAY]);
+				emit("progress", `Xvfb already running on ${DISPLAY}`);
+			} catch {
+				xvfbProc = spawn(
+					"Xvfb",
+					[DISPLAY, "-screen", "0", "1920x1080x24", "-ac"],
+					{ stdio: "ignore", detached: true },
+				);
+				xvfbProc.unref();
+				// Wait for Xvfb to be ready
+				for (let i = 0; i < 20; i++) {
+					try {
+						await execP("xdpyinfo", ["-display", DISPLAY]);
+						break;
+					} catch {
+						await new Promise((r) => setTimeout(r, 250));
+					}
+				}
+				emit("progress", `Xvfb started on ${DISPLAY}`);
+			}
+			process.env.DISPLAY = DISPLAY;
+		}
+
 		const browser = await chromium.launch({
-			headless: !this.config.headed,
+			headless: useX11Grab ? false : !this.config.headed,
 			proxy: await getPlaywrightProxy(),
 		});
 		const context = await browser.newContext({
 			viewport: { width: 1920, height: 1080 },
-			recordVideo: {
-				dir,
-				size: { width: 1920, height: 1080 },
-			},
+			// Only use Playwright's VFR recorder on macOS (local dev)
+			...(useX11Grab
+				? {}
+				: { recordVideo: { dir, size: { width: 1920, height: 1080 } } }),
 			ignoreHTTPSErrors: true,
 			userAgent: CHROME_USER_AGENT,
 		});
 		await applyStealthToContext(context);
 
 		const page = await context.newPage();
+
+		if (useX11Grab) {
+			// Start ffmpeg x11grab recording at constant 30fps.
+			// Use a large probesize/thread_queue_size to avoid frame drops,
+			// and dedicate 4 encoding threads (leaving 4 cores for the browser).
+			ffmpegProc = spawn("ffmpeg", [
+				"-f", "x11grab",
+				"-framerate", "30",
+				"-probesize", "128M",
+				"-thread_queue_size", "1024",
+				"-video_size", "1920x1080",
+				"-i", DISPLAY,
+				"-c:v", "libvpx-vp9",
+				"-b:v", "2M",
+				"-cpu-used", "4",
+				"-threads", "4",
+				"-pix_fmt", "yuv420p",
+				"-y",
+				rawPath,
+			], { stdio: ["pipe", "ignore", "ignore"] });
+			// Give ffmpeg a moment to initialize
+			await new Promise((r) => setTimeout(r, 500));
+		}
 
 		try {
 			// --- Page load ---
@@ -907,23 +970,24 @@ body { ${bgStyle} }
 			// Start the timeline clock only after the page is visible with widget
 			this.recordingStart = Date.now();
 
-			// Inject a tiny continuous animation to prevent Playwright's VFR encoder
-			// from compressing idle frames during waitForTimeout calls. Without this,
-			// idle periods get squished in the video, causing voiceover misalignment.
-			await page.evaluate(() => {
-				const el = document.createElement("div");
-				el.id = "__fi_keepalive";
-				el.style.cssText =
-					"position:fixed;top:0;left:0;width:1px;height:1px;pointer-events:none;z-index:-1;";
-				el.animate(
-					[
-						{ transform: "translateX(0px)" },
-						{ transform: "translateX(0.1px)" },
-					],
-					{ duration: 100, iterations: 1 / 0 },
-				);
-				document.body.appendChild(el);
-			});
+			if (!useX11Grab) {
+				// Inject keepalive animation for Playwright's VFR encoder (macOS only).
+				// Prevents idle frame compression during waitForTimeout calls.
+				await page.evaluate(() => {
+					const el = document.createElement("div");
+					el.id = "__fi_keepalive";
+					el.style.cssText =
+						"position:fixed;top:0;left:0;width:1px;height:1px;pointer-events:none;z-index:-1;";
+					el.animate(
+						[
+							{ transform: "translateX(0px)" },
+							{ transform: "translateX(0.1px)" },
+						],
+						{ duration: 100, iterations: 1 / 0 },
+					);
+					document.body.appendChild(el);
+				});
+			}
 
 			await page.waitForTimeout(2000);
 
@@ -1094,76 +1158,95 @@ body { ${bgStyle} }
 			emit("action-end", "Zoomed out", "zoom-out");
 
 			// --- Finalize ---
-			await page.evaluate(() => {
-				document.getElementById("__fi_keepalive")?.remove();
-			});
 			emit("progress", "Closing browser to finalize video...");
 			await context.close();
 			await browser.close();
 
-			// Find the video file playwright created
-			const files = fs.readdirSync(dir).filter((f) => f.endsWith(".webm"));
-			const videoFile = files[0];
-			if (!videoFile) {
-				throw new Error("No video file found in recording directory");
+			if (useX11Grab) {
+				// Stop ffmpeg recording (send 'q' to stdin for graceful stop)
+				if (ffmpegProc) {
+					await new Promise<void>((resolve) => {
+						ffmpegProc!.on("close", () => resolve());
+						ffmpegProc!.stdin?.write("q");
+						ffmpegProc!.stdin?.end();
+						// Force kill after 10s if graceful stop fails
+						setTimeout(() => {
+							ffmpegProc!.kill("SIGKILL");
+							resolve();
+						}, 10_000);
+					});
+					emit("progress", "Recording stopped");
+				}
+
+				// Stop Xvfb if we started it
+				if (xvfbProc) {
+					xvfbProc.kill();
+				}
+
+				if (!fs.existsSync(rawPath)) {
+					throw new Error("No video file found — ffmpeg x11grab failed");
+				}
+			} else {
+				// macOS: Playwright's VFR recording — find and re-encode
+				const files = fs.readdirSync(dir).filter((f) => f.endsWith(".webm"));
+				const videoFile = files[0];
+				if (!videoFile) {
+					throw new Error("No video file found in recording directory");
+				}
+				fs.renameSync(path.join(dir, videoFile), rawPath);
+
+				// Stretch VFR video to match wall-clock timeline
+				const timelineEnd =
+					this.timeline[this.timeline.length - 1]?.endTime || 0;
+				const { stdout: vp8Str } = await execP("ffprobe", [
+					"-v", "error", "-show_entries", "format=duration",
+					"-of", "csv=p=0", rawPath,
+				]);
+				const vp8Duration = Number.parseFloat(vp8Str.trim());
+				const needsStretch =
+					timelineEnd > 0 &&
+					vp8Duration > 0 &&
+					Math.abs(vp8Duration - timelineEnd) > 1;
+				const ptsFactor = needsStretch ? timelineEnd / vp8Duration : 1;
+
+				if (needsStretch) {
+					emit(
+						"progress",
+						`Video ${vp8Duration.toFixed(1)}s vs timeline ${timelineEnd.toFixed(1)}s, stretching ${ptsFactor.toFixed(3)}x`,
+					);
+				}
+
+				emit("progress", "Re-encoding to VP9...");
+				const vp9TmpPath = path.join(dir, "raw-vp9.webm");
+				await execP("ffmpeg", [
+					"-i", rawPath,
+					...(needsStretch
+						? ["-vf", `setpts=PTS*${ptsFactor.toFixed(6)}`]
+						: []),
+					"-c:v", "libvpx-vp9", "-b:v", "2M",
+					"-cpu-used", "4", "-pix_fmt", "yuv420p",
+					"-c:a", "libopus", "-y", vp9TmpPath,
+				], { timeout: 5 * 60 * 1000, maxBuffer: 10 * 1024 * 1024 });
+				fs.renameSync(vp9TmpPath, rawPath);
 			}
 
-			// Rename to raw.webm and re-encode VP8→VP9 for consistent codec.
-			// Playwright's VFR encoder compresses idle frames more than active ones,
-			// so the video duration diverges from wall-clock. Use setpts to stretch
-			// the video back to wall-clock time so voiceover placement is accurate.
-			const rawPath = path.join(dir, "raw.webm");
-			fs.renameSync(path.join(dir, videoFile), rawPath);
-
-			const timelineEnd = this.timeline[this.timeline.length - 1]?.endTime || 0;
-			const { stdout: durStr } = await execP("ffprobe", [
-				"-v",
-				"error",
-				"-show_entries",
-				"format=duration",
-				"-of",
-				"csv=p=0",
-				rawPath,
-			]);
-			const vp8Duration = Number.parseFloat(durStr.trim());
-
-			const needsStretch =
-				timelineEnd > 0 &&
-				vp8Duration > 0 &&
-				Math.abs(vp8Duration - timelineEnd) > 1;
-			const ptsFactor = needsStretch ? timelineEnd / vp8Duration : 1;
-
-			if (needsStretch) {
+			// Log video vs timeline duration for diagnostics
+			{
+				const tlEnd =
+					this.timeline[this.timeline.length - 1]?.endTime || 0;
+				const { stdout: durStr } = await execP("ffprobe", [
+					"-v", "error", "-show_entries", "format=duration",
+					"-of", "csv=p=0", rawPath,
+				]);
+				const videoDuration = Number.parseFloat(durStr.trim());
 				emit(
 					"progress",
-					`Video ${vp8Duration.toFixed(1)}s vs timeline ${timelineEnd.toFixed(1)}s, stretching ${ptsFactor.toFixed(3)}x`,
+					`Video ${videoDuration.toFixed(1)}s, timeline ${tlEnd.toFixed(1)}s` +
+						(useX11Grab
+							? " (CFR, no stretch needed)"
+							: `, scale: ${(videoDuration / tlEnd).toFixed(3)}`),
 				);
 			}
-
-			emit("progress", "Re-encoding to VP9...");
-			const vp9TmpPath = path.join(dir, "raw-vp9.webm");
-			const ffmpegArgs = [
-				"-i",
-				rawPath,
-				...(needsStretch ? ["-vf", `setpts=PTS*${ptsFactor.toFixed(6)}`] : []),
-				"-c:v",
-				"libvpx-vp9",
-				"-b:v",
-				"2M",
-				"-cpu-used",
-				"4",
-				"-pix_fmt",
-				"yuv420p",
-				"-c:a",
-				"libopus",
-				"-y",
-				vp9TmpPath,
-			];
-			await execP("ffmpeg", ffmpegArgs, {
-				timeout: 5 * 60 * 1000,
-				maxBuffer: 10 * 1024 * 1024,
-			});
-			fs.renameSync(vp9TmpPath, rawPath);
 
 			// Save timeline
 			const timelinePath = path.join(dir, "timeline.json");
@@ -1180,6 +1263,12 @@ body { ${bgStyle} }
 			const message = err instanceof Error ? err.message : String(err);
 			emit("error", `Recording failed: ${message}`);
 			try {
+				if (ffmpegProc) {
+					ffmpegProc.kill("SIGKILL");
+				}
+				if (xvfbProc) {
+					xvfbProc.kill();
+				}
 				await context.close();
 				await browser.close();
 			} catch {
