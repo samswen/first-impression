@@ -11,8 +11,9 @@ export const PAUSE_AFTER_TYPE = 800;
 /** Pause after AI response finishes — let viewer read the answer */
 export const PAUSE_AFTER_RESPONSE = 1000;
 
-/** Minimum open-widget event duration (ms) — narration introduces the widget */
-export const MIN_OPEN_WIDGET_DURATION = 12000;
+/** Minimum open-widget event duration (ms) — narration introduces the widget.
+ *  15s wall-clock survives ~0.87 video rebase → ~13s in video time. */
+export const MIN_OPEN_WIDGET_DURATION = 15000;
 
 /** Minimum query event duration (ms) — narration describes Q&A */
 export const MIN_QUERY_DURATION = 12000;
