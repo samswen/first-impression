@@ -1189,7 +1189,6 @@ body { ${bgStyle} }
 			// --- Open widget ---
 			const openStart = this.now();
 			emit("action-start", "Opening widget...", "open-widget");
-			await flashMarker(page); // marker 0: open-widget
 			await toggle.click();
 
 			const panel = widget.locator(".xinfer-panel");
@@ -1404,14 +1403,14 @@ body { ${bgStyle} }
 					);
 				}
 
-				// Expected markers: open-widget + N queries + zoom-out
-				const narratable = this.timeline.filter(
+				// Expected markers: N queries + zoom-out (no open-widget marker —
+				// it fires too early when ffmpeg may still be warming up)
+				const markerEvents = this.timeline.filter(
 					(e) =>
-						e.action === "open-widget" ||
 						e.action.startsWith("query-") ||
 						e.action === "zoom-out",
 				);
-				const expectedCount = narratable.length;
+				const expectedCount = markerEvents.length;
 
 				emit(
 					"progress",
@@ -1421,8 +1420,8 @@ body { ${bgStyle} }
 				if (markers.length === expectedCount && expectedCount > 0) {
 					// Rebuild timeline using marker timestamps
 					emit("progress", "Rebuilding timeline from markers...");
-					for (let i = 0; i < narratable.length; i++) {
-						const evt = narratable[i];
+					for (let i = 0; i < markerEvents.length; i++) {
+						const evt = markerEvents[i];
 						const markerTime = markers[i];
 						const nextMarkerTime =
 							i + 1 < markers.length
@@ -1462,33 +1461,47 @@ body { ${bgStyle} }
 						}
 					}
 
-					// Update non-narratable events (page-load, zoom-in)
-					// page-load: 0 → first marker
+					// open-widget: 0 → first marker (query-1 start)
+					// This spans page-load + widget open + zoom-in
+					const openWidget = this.timeline.find(
+						(e) => e.action === "open-widget",
+					);
+					if (openWidget) {
+						openWidget.startTime = 0;
+						openWidget.endTime = markers[0];
+						openWidget.sendTime = 0;
+					}
+
+					// page-load: first few seconds (use original ratio)
 					const pageLoad = this.timeline.find(
 						(e) => e.action === "page-load",
 					);
-					if (pageLoad) {
+					if (pageLoad && openWidget) {
+						const scale = tlEnd > 0 ? videoDuration / tlEnd : 1;
 						pageLoad.startTime = 0;
-						pageLoad.endTime = markers[0];
+						pageLoad.endTime = Math.min(
+							pageLoad.endTime * scale,
+							markers[0],
+						);
 						pageLoad.sendTime = 0;
+						// open-widget starts after page-load
+						openWidget.startTime = pageLoad.endTime;
 					}
 
-					// zoom-in: between open-widget and query-1
+					// zoom-in: spans from partway through open-widget to query-1
+					// Use original proportions to split open-widget vs zoom-in
 					const zoomInEvt = this.timeline.find(
 						(e) => e.action === "zoom-in",
 					);
-					if (zoomInEvt && markers.length >= 2) {
-						const openEnd = narratable.find(
-							(e) => e.action === "open-widget",
-						)?.endTime;
-						const q1Start = narratable.find((e) =>
-							e.action.startsWith("query-"),
-						)?.startTime;
-						if (openEnd != null && q1Start != null) {
-							zoomInEvt.startTime = openEnd;
-							zoomInEvt.endTime = q1Start;
-							zoomInEvt.sendTime = openEnd;
-						}
+					if (zoomInEvt && openWidget) {
+						// zoom-in gets the tail end of the pre-query period
+						const scale = tlEnd > 0 ? videoDuration / tlEnd : 1;
+						const zoomStart = zoomInEvt.startTime * scale;
+						zoomInEvt.startTime = Math.min(zoomStart, markers[0]);
+						zoomInEvt.endTime = markers[0];
+						zoomInEvt.sendTime = zoomInEvt.startTime;
+						// open-widget ends where zoom-in starts
+						openWidget.endTime = zoomInEvt.startTime;
 					}
 
 					const scale = tlEnd > 0 ? videoDuration / tlEnd : 1;
