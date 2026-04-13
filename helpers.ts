@@ -15,9 +15,9 @@ export const PAUSE_AFTER_RESPONSE = 1000;
 export const MIN_OPEN_WIDGET_DURATION = 12000;
 
 /** Pause after zoom-in completes (ms) — let viewer see the zoomed widget
- *  before typing starts. Compensates for the ~7s of page-load pre-roll
- *  that was removed when we moved ffmpeg start to after page load. */
-export const ZOOM_SETTLE_DURATION = 5000;
+ *  before typing starts. Keep short to avoid dead air between open-widget
+ *  narration ending and query-1 typing starting. */
+export const ZOOM_SETTLE_DURATION = 3000;
 
 /** Minimum query event duration (ms) — narration describes Q&A */
 export const MIN_QUERY_DURATION = 12000;
