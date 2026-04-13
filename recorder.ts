@@ -860,6 +860,7 @@ body { ${bgStyle} }
 		let xvfbProc: ChildProcess | null = null;
 		let ffmpegProc: ChildProcess | null = null;
 		const rawPath = path.join(dir, "raw.webm");
+		const capturePath = path.join(dir, "raw-capture.mkv");
 
 		if (useX11Grab) {
 			// Start Xvfb if not already running
@@ -958,6 +959,9 @@ body { ${bgStyle} }
 			// so the recording doesn't begin with a blank Xvfb screen.
 			if (useX11Grab) {
 				const chromeHeight = 110;
+				// Record with H264 ultrafast — VP9 real-time encoding drops frames
+				// at 1080p30 on ARM, causing video duration < wall-clock time.
+				// H264 ultrafast handles 30fps trivially; we transcode to VP9 afterward.
 				ffmpegProc = spawn("ffmpeg", [
 					"-f", "x11grab",
 					"-framerate", "30",
@@ -966,13 +970,12 @@ body { ${bgStyle} }
 					"-video_size", `1920x${1080 + chromeHeight}`,
 					"-i", DISPLAY,
 					"-vf", `crop=1920:1080:0:${chromeHeight}`,
-					"-c:v", "libvpx-vp9",
-					"-b:v", "2M",
-					"-cpu-used", "4",
-					"-threads", "4",
+					"-c:v", "libx264",
+					"-preset", "ultrafast",
+					"-crf", "18",
 					"-pix_fmt", "yuv420p",
 					"-y",
-					rawPath,
+					capturePath,
 				], { stdio: ["pipe", "ignore", "ignore"] });
 				// Give ffmpeg a moment to initialize
 				await new Promise((r) => setTimeout(r, 500));
@@ -1194,9 +1197,26 @@ body { ${bgStyle} }
 					xvfbProc.kill();
 				}
 
-				if (!fs.existsSync(rawPath)) {
+				if (!fs.existsSync(capturePath)) {
 					throw new Error("No video file found — ffmpeg x11grab failed");
 				}
+
+				// Transcode H264 → VP9 (offline, no real-time constraint)
+				emit("progress", "Transcoding H264 → VP9...");
+				await execP("ffmpeg", [
+					"-i", capturePath,
+					"-c:v", "libvpx-vp9",
+					"-b:v", "2M",
+					"-cpu-used", "4",
+					"-threads", "4",
+					"-pix_fmt", "yuv420p",
+					"-an",
+					"-y",
+					rawPath,
+				], { timeout: 10 * 60 * 1000, maxBuffer: 10 * 1024 * 1024 });
+
+				// Clean up intermediate capture file
+				try { fs.unlinkSync(capturePath); } catch {}
 			} else {
 				// macOS: Playwright's VFR recording — find and re-encode
 				const files = fs.readdirSync(dir).filter((f) => f.endsWith(".webm"));
@@ -1250,12 +1270,11 @@ body { ${bgStyle} }
 					"-of", "csv=p=0", rawPath,
 				]);
 				const videoDuration = Number.parseFloat(durStr.trim());
+				const scale = tlEnd > 0 ? videoDuration / tlEnd : 1;
 				emit(
 					"progress",
-					`Video ${videoDuration.toFixed(1)}s, timeline ${tlEnd.toFixed(1)}s` +
-						(useX11Grab
-							? " (CFR, no stretch needed)"
-							: `, scale: ${(videoDuration / tlEnd).toFixed(3)}`),
+					`Video ${videoDuration.toFixed(1)}s, timeline ${tlEnd.toFixed(1)}s, scale: ${scale.toFixed(3)}` +
+						(useX11Grab ? " (H264→VP9 transcode)" : ""),
 				);
 			}
 
