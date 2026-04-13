@@ -12,8 +12,9 @@ export const PAUSE_AFTER_TYPE = 800;
 export const PAUSE_AFTER_RESPONSE = 1000;
 
 /** Minimum open-widget event duration (ms) — narration introduces the widget.
- *  15s wall-clock survives ~0.87 video rebase → ~13s in video time. */
-export const MIN_OPEN_WIDGET_DURATION = 15000;
+ *  Was 12s when recording included ~7s of page-load white screen before events.
+ *  Now that recording starts after page load, add those seconds here. */
+export const MIN_OPEN_WIDGET_DURATION = 19000;
 
 /** Minimum query event duration (ms) — narration describes Q&A */
 export const MIN_QUERY_DURATION = 12000;
