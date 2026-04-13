@@ -139,9 +139,10 @@ export async function zoomToElement(
 
 	console.log(`  Panel bounds: ${box.x}, ${box.y}, ${box.width}x${box.height}`);
 
-	// Compute scale so the panel fills the full viewport height
-	// Use full height (no vertical padding), with a small horizontal margin
-	const scale = Math.min(maxScale, (vw * 0.9) / box.width, vh / box.height);
+	// Compute scale so the panel fills most of the viewport with padding.
+	// 90% width, 92% height — leaves ~4% margin top/bottom so the input
+	// bar and action buttons at the bottom don't overflow off-screen.
+	const scale = Math.min(maxScale, (vw * 0.9) / box.width, (vh * 0.92) / box.height);
 
 	console.log(`  Computed scale: ${scale.toFixed(2)}`);
 
