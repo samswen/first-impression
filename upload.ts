@@ -355,10 +355,18 @@ export async function publishDemo(
 		);
 	}
 
-	// 6. Upload directory key (same HTML, for bare /demo/slug/vN access)
+	// 6. Upload directory keys (same HTML, for bare /demo/slug/vN access)
+	// We upload to both with and without trailing slash for browser compatibility
 	if (uploads.__dir__) {
 		await uploadWithPresignedUrl(
 			uploads.__dir__.url,
+			html,
+			"text/html; charset=utf-8",
+		);
+	}
+	if (uploads["__dir_slash__"]) {
+		await uploadWithPresignedUrl(
+			uploads["__dir_slash__"].url,
 			html,
 			"text/html; charset=utf-8",
 		);
