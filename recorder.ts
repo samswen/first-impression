@@ -914,33 +914,6 @@ body { ${bgStyle} }
 
 		const page = await context.newPage();
 
-		if (useX11Grab) {
-			// Start ffmpeg x11grab recording at constant 30fps.
-			// Use a large probesize/thread_queue_size to avoid frame drops,
-			// and dedicate 4 encoding threads (leaving 4 cores for the browser).
-			// Capture 1920x1200 (includes browser chrome), then crop to 1920x1080
-			// The crop removes browser title/address bar from the top (106px tuned for visual balance)
-			const chromeHeight = 106;
-			ffmpegProc = spawn("ffmpeg", [
-				"-f", "x11grab",
-				"-framerate", "30",
-				"-probesize", "128M",
-				"-thread_queue_size", "1024",
-				"-video_size", `1920x${1080 + chromeHeight}`,
-				"-i", DISPLAY,
-				"-vf", `crop=1920:1080:0:${chromeHeight}`,
-				"-c:v", "libvpx-vp9",
-				"-b:v", "2M",
-				"-cpu-used", "4",
-				"-threads", "4",
-				"-pix_fmt", "yuv420p",
-				"-y",
-				rawPath,
-			], { stdio: ["pipe", "ignore", "ignore"] });
-			// Give ffmpeg a moment to initialize
-			await new Promise((r) => setTimeout(r, 500));
-		}
-
 		try {
 			// --- Page load ---
 			emit("action-start", `Loading ${this.config.url}`, "page-load");
@@ -980,6 +953,30 @@ body { ${bgStyle} }
 			await widget.waitFor({ state: "attached", timeout: 30_000 });
 			const toggle = widget.locator(".xinfer-toggle");
 			await toggle.waitFor({ state: "visible", timeout: 10_000 });
+
+			// Start ffmpeg AFTER the page is rendered and widget is visible,
+			// so the recording doesn't begin with a blank Xvfb screen.
+			if (useX11Grab) {
+				const chromeHeight = 106;
+				ffmpegProc = spawn("ffmpeg", [
+					"-f", "x11grab",
+					"-framerate", "30",
+					"-probesize", "128M",
+					"-thread_queue_size", "1024",
+					"-video_size", `1920x${1080 + chromeHeight}`,
+					"-i", DISPLAY,
+					"-vf", `crop=1920:1080:0:${chromeHeight}`,
+					"-c:v", "libvpx-vp9",
+					"-b:v", "2M",
+					"-cpu-used", "4",
+					"-threads", "4",
+					"-pix_fmt", "yuv420p",
+					"-y",
+					rawPath,
+				], { stdio: ["pipe", "ignore", "ignore"] });
+				// Give ffmpeg a moment to initialize
+				await new Promise((r) => setTimeout(r, 500));
+			}
 
 			// Start the timeline clock only after the page is visible with widget
 			this.recordingStart = Date.now();
