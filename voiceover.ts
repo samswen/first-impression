@@ -220,14 +220,11 @@ export async function addVoiceover(
 
 	// Build segments for the narration API
 	// Use 75% of real event duration to give TTS timing headroom.
-	// open-widget gets +3s word budget (~7 extra words) for fuller intro;
-	// this only affects LLM target, not the TTS timing budget check.
 	const segments: NarrationSegment[] = narratableEvents.map((e) => ({
 		action: e.action,
 		query: e.action.startsWith("query-") ? e.label : undefined,
 		response: e.response?.slice(0, 500),
-		availableDuration:
-			(e.endTime - e.startTime) * 0.75 + (e.action === "open-widget" ? 3 : 0),
+		availableDuration: (e.endTime - e.startTime) * 0.75,
 	}));
 
 	onProgress?.("Narration budgets (75% of event duration):");
