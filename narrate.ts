@@ -358,7 +358,7 @@ async function renderTextOverlay(
     background: transparent;
   }
   .card {
-    max-width: 800px;
+    max-width: 1000px;
     padding: 48px 56px;
     background: rgba(15, 23, 42, 0.82);
     border-radius: 24px;
