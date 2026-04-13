@@ -957,7 +957,7 @@ body { ${bgStyle} }
 			// Start ffmpeg AFTER the page is rendered and widget is visible,
 			// so the recording doesn't begin with a blank Xvfb screen.
 			if (useX11Grab) {
-				const chromeHeight = 106;
+				const chromeHeight = 110;
 				ffmpegProc = spawn("ffmpeg", [
 					"-f", "x11grab",
 					"-framerate", "30",
