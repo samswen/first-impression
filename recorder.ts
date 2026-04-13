@@ -1128,6 +1128,24 @@ body { ${bgStyle} }
 					], { stdio: ["pipe", "ignore", ffmpegLogFd] });
 				} else {
 					// macOS: avfoundation screen capture
+					// Dynamically find "Capture screen 0" device index
+					// (varies when iPhones/external cameras are connected)
+					let screenDeviceIndex = "3";
+					try {
+						const devResult = await execP("ffmpeg", [
+							"-f", "avfoundation",
+							"-list_devices", "true",
+							"-i", "",
+						]).catch((e: any) => ({ stdout: "", stderr: e.stderr || "" }));
+						const match = devResult.stderr.match(/\[(\d+)\] Capture screen 0/);
+						if (match) {
+							screenDeviceIndex = match[1];
+						}
+						emit("progress", `avfoundation: screen device index=${screenDeviceIndex}`);
+					} catch {
+						emit("progress", `avfoundation: device detection failed, using index ${screenDeviceIndex}`);
+					}
+
 					// Measure browser chrome height and Retina pixel ratio
 					const dpr = await page.evaluate(() => window.devicePixelRatio) || 1;
 					const chromeH = await page.evaluate(
@@ -1158,7 +1176,7 @@ body { ${bgStyle} }
 						"-capture_cursor", "0",
 						"-probesize", "128M",
 						"-thread_queue_size", "1024",
-						"-i", "1:none",
+						"-i", `${screenDeviceIndex}:none`,
 						"-vf", `crop=${cropW}:${cropH}:0:${contentTop},scale=1920:1080`,
 						"-c:v", "libvpx-vp9",
 						"-b:v", "2M",
@@ -1169,8 +1187,16 @@ body { ${bgStyle} }
 						rawPath,
 					], { stdio: ["pipe", "ignore", ffmpegLogFd] });
 				}
-				// Give ffmpeg a moment to initialize
+				// Give ffmpeg a moment to initialize and detect early exit
 				await new Promise((r) => setTimeout(r, 500));
+				if (ffmpegProc && ffmpegProc.exitCode !== null) {
+					const logContent = fs.existsSync(path.join(dir, "ffmpeg-capture.log"))
+						? fs.readFileSync(path.join(dir, "ffmpeg-capture.log"), "utf-8").slice(-500)
+						: "no log";
+					throw new Error(
+						`ffmpeg exited immediately (code ${ffmpegProc.exitCode}). Log: ${logContent}`,
+					);
+				}
 			}
 
 			// Start the timeline clock only after the page is visible with widget
