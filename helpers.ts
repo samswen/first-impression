@@ -11,10 +11,13 @@ export const PAUSE_AFTER_TYPE = 800;
 /** Pause after AI response finishes — let viewer read the answer */
 export const PAUSE_AFTER_RESPONSE = 1000;
 
-/** Minimum open-widget event duration (ms) — narration introduces the widget.
- *  Was 12s when recording included ~7s of page-load white screen before events.
- *  Now that recording starts after page load, add those seconds here. */
-export const MIN_OPEN_WIDGET_DURATION = 19000;
+/** Minimum open-widget event duration (ms) — narration introduces the widget */
+export const MIN_OPEN_WIDGET_DURATION = 12000;
+
+/** Pause after zoom-in completes (ms) — let viewer see the zoomed widget
+ *  before typing starts. Compensates for the ~7s of page-load pre-roll
+ *  that was removed when we moved ffmpeg start to after page load. */
+export const ZOOM_SETTLE_DURATION = 5000;
 
 /** Minimum query event duration (ms) — narration describes Q&A */
 export const MIN_QUERY_DURATION = 12000;

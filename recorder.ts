@@ -14,6 +14,7 @@ import {
 	MIN_QUERY_WITH_FORM_DURATION,
 	PAUSE_AFTER_RESPONSE,
 	PAUSE_AFTER_TYPE,
+	ZOOM_SETTLE_DURATION,
 	resetZoom,
 	sendMessage,
 	TYPING_DELAY,
@@ -1042,6 +1043,10 @@ body { ${bgStyle} }
 			const zoomStart = this.now();
 			emit("action-start", "Zooming into widget...", "zoom-in");
 			await zoomToElement(page, panel);
+
+			// Hold on the zoomed widget so the viewer can see the
+			// greeting / empty chat state before typing starts.
+			await page.waitForTimeout(ZOOM_SETTLE_DURATION);
 
 			this.timeline.push({
 				action: "zoom-in",
