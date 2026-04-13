@@ -653,7 +653,7 @@ interface MarkerResult {
  * Returns an array of video timestamps (seconds) where markers were detected,
  * plus a diagnostic string for logging.
  *
- * How it works: extract the bottom-left 20×20 pixel crop as raw RGB, then
+ * How it works: extract the bottom-left 8×8 pixel crop as raw RGB, then
  * scan each frame for high average green. Consecutive green frames are
  * grouped; the midpoint of each group is reported as the marker time.
  */
@@ -684,8 +684,8 @@ async function detectMarkers(
 			"-of", "csv=p=0", videoPath],
 	);
 	const [vidW, vidH] = dimStr.trim().split(",").map(Number);
-	// Marker is at top-left (0,0) — no offset needed
-	const cropY = 0;
+	// Marker is at bottom-left — crop the bottom 8 rows
+	const cropY = vidH - CROP_H;
 
 	return new Promise((resolve, reject) => {
 		const stderrChunks: Buffer[] = [];
@@ -1103,7 +1103,12 @@ body { ${bgStyle} }
 				const ffmpegLogFd = fs.openSync(ffmpegLog, "w");
 
 				if (isLinux) {
-					const chromeHeight = 110;
+					// Dynamically measure chrome height (tab bar + address bar)
+					// so the crop exactly aligns the CSS viewport to the video frame.
+					const chromeHeight = await page.evaluate(
+						() => window.outerHeight - window.innerHeight,
+					);
+					emit("progress", `x11grab: chromeHeight=${chromeHeight}`);
 					ffmpegProc = spawn("ffmpeg", [
 						"-f", "x11grab",
 						"-framerate", "30",
