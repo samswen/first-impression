@@ -139,19 +139,16 @@ export async function zoomToElement(
 
 	console.log(`  Panel bounds: ${box.x}, ${box.y}, ${box.width}x${box.height}`);
 
-	// Compute scale so the panel fills most of the viewport with padding.
-	// 90% width, 92% height — leaves ~4% margin top/bottom so the input
-	// bar and action buttons at the bottom don't overflow off-screen.
-	const scale = Math.min(maxScale, (vw * 0.9) / box.width, (vh * 0.92) / box.height);
+	// Compute scale so the panel fills most of the viewport with small margins.
+	// 90% width, 95% height ensures the widget stays fully within viewport bounds.
+	const scale = Math.min(maxScale, (vw * 0.9) / box.width, (vh * 0.95) / box.height);
 
 	console.log(`  Computed scale: ${scale.toFixed(2)}`);
 
-	// With transform-origin: 0 0 on the element:
-	//   After scale(S): element center moves from (x+w/2, y+h/2) to (x+w*S/2, y+h*S/2)
-	//   After translate(tx,ty): center moves to (x+w*S/2+tx, y+h*S/2+ty)
-	//   We want center at (vw/2, vh/2)
+	// Position: horizontally and vertically centered, shifted down slightly.
+	// This ensures the widget fits fully within the viewport with equal margins.
 	const tx = vw / 2 - box.x - (box.width * scale) / 2;
-	const ty = vh / 2 - box.y - (box.height * scale) / 2;
+	const ty = vh / 2 - box.y - (box.height * scale) / 2 + 4;
 
 	await locator.evaluate(
 		(el, { tx, ty, scale, ms }) => {

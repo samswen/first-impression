@@ -869,7 +869,9 @@ body { ${bgStyle} }
 			} catch {
 				xvfbProc = spawn(
 					"Xvfb",
-					[DISPLAY, "-screen", "0", "1920x1080x24", "-ac"],
+					// Use taller display to accommodate browser chrome (title + address bar)
+					// We'll crop to 1920x1080 in post-processing
+					[DISPLAY, "-screen", "0", "1920x1200x24", "-ac"],
 					{ stdio: "ignore", detached: true },
 				);
 				xvfbProc.unref();
@@ -890,6 +892,14 @@ body { ${bgStyle} }
 		const browser = await chromium.launch({
 			headless: useX11Grab ? false : !this.config.headed,
 			proxy: await getPlaywrightProxy(),
+			// In x11grab mode, position window at top-left; we'll crop the chrome in post
+			args: useX11Grab
+				? [
+						"--disable-infobars",
+						"--window-position=0,0",
+						"--window-size=1920,1200",
+					]
+				: [],
 		});
 		const context = await browser.newContext({
 			viewport: { width: 1920, height: 1080 },
@@ -908,13 +918,17 @@ body { ${bgStyle} }
 			// Start ffmpeg x11grab recording at constant 30fps.
 			// Use a large probesize/thread_queue_size to avoid frame drops,
 			// and dedicate 4 encoding threads (leaving 4 cores for the browser).
+			// Capture 1920x1200 (includes browser chrome), then crop to 1920x1080
+			// The crop removes ~120px of browser title/address bar from the top
+			const chromeHeight = 120;
 			ffmpegProc = spawn("ffmpeg", [
 				"-f", "x11grab",
 				"-framerate", "30",
 				"-probesize", "128M",
 				"-thread_queue_size", "1024",
-				"-video_size", "1920x1080",
+				"-video_size", `1920x${1080 + chromeHeight}`,
 				"-i", DISPLAY,
+				"-vf", `crop=1920:1080:0:${chromeHeight}`,
 				"-c:v", "libvpx-vp9",
 				"-b:v", "2M",
 				"-cpu-used", "4",
