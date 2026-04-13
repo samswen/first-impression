@@ -331,13 +331,14 @@ async function renderTextOverlay(
 	text: string,
 	outputPath: string,
 ): Promise<void> {
-	// Strip CR/LF and collapse whitespace — AI-generated text often
-	// contains unwanted line breaks that cause single-word rows
+	// Strip all whitespace control characters (CR, LF, tabs, Unicode line/para
+	// separators) and collapse runs of spaces — AI-generated text often contains
+	// unwanted breaks that cause single-word rows in the overlay.
 	const clean = text
-		.replace(/[\r\n]+/g, " ")
+		.replace(/[\r\n\t\u2028\u2029]+/g, " ")
 		.replace(/\s+/g, " ")
 		.trim();
-	const wrapped = wordWrap(clean, 45);
+	const wrapped = wordWrap(clean, 55);
 	const lines = wrapped
 		.split("\n")
 		.map((l) => `<span>${escapeHtml(l)}</span>`)
