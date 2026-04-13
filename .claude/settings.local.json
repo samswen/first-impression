@@ -94,7 +94,14 @@
       "WebFetch(domain:eprestaurant.com)",
       "WebFetch(domain:builtwith.com)",
       "Bash(git -C /Users/sam/projects/first-impression diff)",
-      "Bash(git -C /Users/sam/projects/first-impression commit -m \"$\\(cat <<''EOF''\nFix snapshot capturing black/colorless images on AWS\n\nReplace video-blocking + ffmpeg frame extraction approach with proper\nlazy-load handling: force eager loading, scroll page to trigger\nIntersectionObserver, wait for all images to complete. Videos are\npaused for clean frames or replaced with poster fallback.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git -C /Users/sam/projects/first-impression commit -m \"$\\(cat <<''EOF''\nFix snapshot capturing black/colorless images on AWS\n\nReplace video-blocking + ffmpeg frame extraction approach with proper\nlazy-load handling: force eager loading, scroll page to trigger\nIntersectionObserver, wait for all images to complete. Videos are\npaused for clean frames or replaced with poster fallback.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git -C /home/workspace/rag-chatbot-dev diff app/api/first-impression/t/[tenantId]/publish/route.ts)",
+      "Bash(git -C /home/workspace/rag-chatbot-dev add app/api/first-impression/t/[tenantId]/publish/route.ts)",
+      "Bash(git -C /home/workspace/rag-chatbot-dev commit -m \"$\\(cat <<''EOF''\nFix trailing-slash 403 for demo URLs\n\nAdd __dir_slash__ presigned URL so both /demo/slug/vN and /demo/slug/vN/\nserve the same HTML. Browsers often append trailing slashes to\ndirectory-like URLs, causing 403 when only the no-slash key exists.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git -C /home/workspace/rag-chatbot-dev push)",
+      "Bash(git -C /home/workspace/first-impression add upload.ts)",
+      "Bash(git -C /home/workspace/first-impression commit -m \"$\\(cat <<''EOF''\nUpload to trailing-slash directory key for browser compatibility\n\nUpload HTML to both __dir__ and __dir_slash__ keys so URLs work\nwith or without trailing slash \\(browsers often add trailing slashes\\).\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git -C /home/workspace/first-impression push)"
     ]
   }
 }
