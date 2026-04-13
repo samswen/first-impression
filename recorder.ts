@@ -676,7 +676,7 @@ async function detectMarkers(
 	const [num, den] = stdout.trim().split("/").map(Number);
 	const detectedFps = den ? num / den : fps;
 
-	// Also get video dimensions to compute crop position
+	// Also get video dimensions for diagnostics
 	const { stdout: dimStr } = await execP(
 		"ffprobe",
 		["-v", "error", "-select_streams", "v:0",
@@ -684,7 +684,8 @@ async function detectMarkers(
 			"-of", "csv=p=0", videoPath],
 	);
 	const [vidW, vidH] = dimStr.trim().split(",").map(Number);
-	const cropY = (vidH || 1080) - CROP_H;
+	// Marker is at top-left (0,0) — no offset needed
+	const cropY = 0;
 
 	return new Promise((resolve, reject) => {
 		const stderrChunks: Buffer[] = [];
@@ -998,20 +999,18 @@ body { ${bgStyle} }
 		if (signal?.aborted) throw new Error("Cancelled");
 		emit("progress", "Launching recording browser...");
 
-		// On Linux, use Xvfb + ffmpeg x11grab for constant-frame-rate recording.
-		// Playwright's built-in recordVideo uses a VFR encoder that compresses
-		// idle frames, causing video duration to diverge from wall-clock time.
-		// ffmpeg x11grab captures at a fixed 30fps tied to wall-clock, so the
-		// video duration always matches the timeline — no stretching needed.
-		// On macOS (local dev), Playwright's VFR works fine since the machine
-		// can render at real-time speed.
-		const useX11Grab = process.platform === "linux";
+		// Both platforms use ffmpeg screen capture at 30fps CFR:
+		// - Linux: Xvfb virtual display + x11grab
+		// - macOS: avfoundation screen capture
+		// This replaces Playwright's VFR recorder which compresses idle frames,
+		// causing video duration to diverge from wall-clock time.
+		const isLinux = process.platform === "linux";
 		const DISPLAY = ":99";
 		let xvfbProc: ChildProcess | null = null;
 		let ffmpegProc: ChildProcess | null = null;
 		const rawPath = path.join(dir, "raw.webm");
 
-		if (useX11Grab) {
+		if (isLinux) {
 			// Start Xvfb if not already running
 			try {
 				await execP("xdpyinfo", ["-display", DISPLAY]);
@@ -1040,23 +1039,16 @@ body { ${bgStyle} }
 		}
 
 		const browser = await chromium.launch({
-			headless: useX11Grab ? false : !this.config.headed,
+			headless: false, // Always headed — ffmpeg captures the visible window
 			proxy: await getPlaywrightProxy(),
-			// In x11grab mode, position window at top-left; we'll crop the chrome in post
-			args: useX11Grab
-				? [
-						"--disable-infobars",
-						"--window-position=0,0",
-						"--window-size=1920,1200",
-					]
-				: [],
+			args: [
+				"--disable-infobars",
+				"--window-position=0,0",
+				"--window-size=1920,1200",
+			],
 		});
 		const context = await browser.newContext({
 			viewport: { width: 1920, height: 1080 },
-			// Only use Playwright's VFR recorder on macOS (local dev)
-			...(useX11Grab
-				? {}
-				: { recordVideo: { dir, size: { width: 1920, height: 1080 } } }),
 			ignoreHTTPSErrors: true,
 			userAgent: CHROME_USER_AGENT,
 		});
@@ -1105,52 +1097,78 @@ body { ${bgStyle} }
 			await toggle.waitFor({ state: "visible", timeout: 10_000 });
 
 			// Start ffmpeg AFTER the page is rendered and widget is visible,
-			// so the recording doesn't begin with a blank Xvfb screen.
-			if (useX11Grab) {
-				const chromeHeight = 110;
+			// so the recording doesn't begin with a blank screen.
+			{
 				const ffmpegLog = path.join(dir, "ffmpeg-capture.log");
 				const ffmpegLogFd = fs.openSync(ffmpegLog, "w");
-				ffmpegProc = spawn("ffmpeg", [
-					"-f", "x11grab",
-					"-framerate", "30",
-					"-probesize", "128M",
-					"-thread_queue_size", "1024",
-					"-video_size", `1920x${1080 + chromeHeight}`,
-					"-i", DISPLAY,
-					"-vf", `crop=1920:1080:0:${chromeHeight}`,
-					"-c:v", "libvpx-vp9",
-					"-b:v", "2M",
-					"-cpu-used", "4",
-					"-threads", "4",
-					"-pix_fmt", "yuv420p",
-					"-y",
-					rawPath,
-				], { stdio: ["pipe", "ignore", ffmpegLogFd] });
+
+				if (isLinux) {
+					const chromeHeight = 110;
+					ffmpegProc = spawn("ffmpeg", [
+						"-f", "x11grab",
+						"-framerate", "30",
+						"-probesize", "128M",
+						"-thread_queue_size", "1024",
+						"-video_size", `1920x${1080 + chromeHeight}`,
+						"-i", DISPLAY,
+						"-vf", `crop=1920:1080:0:${chromeHeight}`,
+						"-c:v", "libvpx-vp9",
+						"-b:v", "2M",
+						"-cpu-used", "4",
+						"-threads", "4",
+						"-pix_fmt", "yuv420p",
+						"-y",
+						rawPath,
+					], { stdio: ["pipe", "ignore", ffmpegLogFd] });
+				} else {
+					// macOS: avfoundation screen capture
+					// Measure browser chrome height and Retina pixel ratio
+					const dpr = await page.evaluate(() => window.devicePixelRatio) || 1;
+					const chromeH = await page.evaluate(
+						() => window.outerHeight - window.innerHeight,
+					);
+					const screenY = await page.evaluate(() => window.screenY);
+					const screenH = await page.evaluate(
+						() => window.screen.height,
+					);
+					const contentTop = Math.round((screenY + chromeH) * dpr);
+					const screenPixH = Math.round(screenH * dpr);
+					// Clip crop height to available screen space
+					const cropH = Math.min(
+						Math.round(1080 * dpr),
+						screenPixH - contentTop,
+					);
+					const cropW = Math.min(
+						Math.round(1920 * dpr),
+						Math.round(screenH * dpr * (16 / 9)), // approximate screen width
+					);
+					emit(
+						"progress",
+						`avfoundation: dpr=${dpr} screenY=${screenY} chromeH=${chromeH} screenH=${screenH} crop=${cropW}x${cropH}+0+${contentTop}`,
+					);
+					ffmpegProc = spawn("ffmpeg", [
+						"-f", "avfoundation",
+						"-framerate", "30",
+						"-capture_cursor", "0",
+						"-probesize", "128M",
+						"-thread_queue_size", "1024",
+						"-i", "1:none",
+						"-vf", `crop=${cropW}:${cropH}:0:${contentTop},scale=1920:1080`,
+						"-c:v", "libvpx-vp9",
+						"-b:v", "2M",
+						"-cpu-used", "4",
+						"-threads", "4",
+						"-pix_fmt", "yuv420p",
+						"-y",
+						rawPath,
+					], { stdio: ["pipe", "ignore", ffmpegLogFd] });
+				}
 				// Give ffmpeg a moment to initialize
 				await new Promise((r) => setTimeout(r, 500));
 			}
 
 			// Start the timeline clock only after the page is visible with widget
 			this.recordingStart = Date.now();
-
-			if (!useX11Grab) {
-				// Inject keepalive animation for Playwright's VFR encoder (macOS only).
-				// Prevents idle frame compression during waitForTimeout calls.
-				await page.evaluate(() => {
-					const el = document.createElement("div");
-					el.id = "__fi_keepalive";
-					el.style.cssText =
-						"position:fixed;top:0;left:0;width:1px;height:1px;pointer-events:none;z-index:-1;";
-					el.animate(
-						[
-							{ transform: "translateX(0px)" },
-							{ transform: "translateX(0.1px)" },
-						],
-						{ duration: 100, iterations: 1 / 0 },
-					);
-					document.body.appendChild(el);
-				});
-			}
 
 			await page.waitForTimeout(2000);
 
@@ -1332,39 +1350,28 @@ body { ${bgStyle} }
 			await context.close();
 			await browser.close();
 
-			if (useX11Grab) {
-				// Stop ffmpeg recording (send 'q' to stdin for graceful stop)
-				if (ffmpegProc) {
-					await new Promise<void>((resolve) => {
-						ffmpegProc!.on("close", () => resolve());
-						ffmpegProc!.stdin?.write("q");
-						ffmpegProc!.stdin?.end();
-						// Force kill after 10s if graceful stop fails
-						setTimeout(() => {
-							ffmpegProc!.kill("SIGKILL");
-							resolve();
-						}, 10_000);
-					});
-					emit("progress", "Recording stopped");
-				}
+			// Stop ffmpeg recording (send 'q' to stdin for graceful stop)
+			if (ffmpegProc) {
+				await new Promise<void>((resolve) => {
+					ffmpegProc!.on("close", () => resolve());
+					ffmpegProc!.stdin?.write("q");
+					ffmpegProc!.stdin?.end();
+					// Force kill after 10s if graceful stop fails
+					setTimeout(() => {
+						ffmpegProc!.kill("SIGKILL");
+						resolve();
+					}, 10_000);
+				});
+				emit("progress", "Recording stopped");
+			}
 
-				// Stop Xvfb if we started it
-				if (xvfbProc) {
-					xvfbProc.kill();
-				}
+			// Stop Xvfb if we started it (Linux only)
+			if (xvfbProc) {
+				xvfbProc.kill();
+			}
 
-				if (!fs.existsSync(rawPath)) {
-					throw new Error("No video file found — ffmpeg x11grab failed");
-				}
-			} else {
-				// macOS: Playwright's VFR recording — just rename the file.
-				// Marker-based sync handles the VFR timing mismatch.
-				const files = fs.readdirSync(dir).filter((f) => f.endsWith(".webm"));
-				const videoFile = files[0];
-				if (!videoFile) {
-					throw new Error("No video file found in recording directory");
-				}
-				fs.renameSync(path.join(dir, videoFile), rawPath);
+			if (!fs.existsSync(rawPath)) {
+				throw new Error("No video file found — ffmpeg recording failed");
 			}
 
 			// --- Marker-based timeline sync ---

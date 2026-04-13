@@ -31,9 +31,12 @@ const STREAMING_TIMEOUT = 90_000;
 // --- Helpers ---
 
 /**
- * Flash a 6×6 bright-green dot at bottom-left of the page for ~150 ms.
+ * Flash a bright-green dot at the top-left corner for ~150 ms.
  * Used as a visual marker that can be detected in the recorded video
  * to obtain ground-truth per-event timestamps.
+ *
+ * Top-left is used because it maps to video pixel (0,0) on both x11grab
+ * and avfoundation — no crop-boundary edge cases like bottom-left has.
  */
 export async function flashMarker(
 	page: Page,
@@ -43,7 +46,7 @@ export async function flashMarker(
 		const el = document.createElement("div");
 		el.id = "__fi_marker";
 		el.style.cssText =
-			"position:fixed;bottom:0;left:0;width:40px;height:40px;background:#00FF00;z-index:999999;pointer-events:none;";
+			"position:fixed;top:0;left:0;width:40px;height:40px;background:#00FF00;z-index:999999;pointer-events:none;";
 		document.body.appendChild(el);
 	});
 	await page.waitForTimeout(durationMs);
