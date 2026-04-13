@@ -218,16 +218,6 @@ export async function addVoiceover(
 		(e) => e.action === "open-widget" || e.action.startsWith("query-"),
 	);
 
-	// Absorb zoom-in time into open-widget for narration budgeting —
-	// zoom-in has no narration, so its duration is dead air. By extending
-	// open-widget's endTime the LLM gets a larger word budget and generates
-	// longer narration that fills the gap before query-1 typing starts.
-	const zoomIn = scaledTimeline.find((e) => e.action === "zoom-in");
-	const openWidget = narratableEvents.find((e) => e.action === "open-widget");
-	if (zoomIn && openWidget) {
-		openWidget.endTime = zoomIn.endTime;
-	}
-
 	// Build segments for the narration API
 	// Use 75% of real event duration to give TTS timing headroom.
 	const segments: NarrationSegment[] = narratableEvents.map((e) => ({

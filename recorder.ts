@@ -15,6 +15,7 @@ import {
 	PAUSE_AFTER_RESPONSE,
 	PAUSE_AFTER_TYPE,
 	ZOOM_SETTLE_DURATION,
+	flashMarker,
 	resetZoom,
 	sendMessage,
 	TYPING_DELAY,
@@ -642,6 +643,104 @@ async function loadPageForSnapshot(
 	return imageStats;
 }
 
+/**
+ * Scan the bottom-left corner of a video for bright-green marker flashes.
+ * Returns an array of video timestamps (seconds) where markers were detected.
+ *
+ * How it works: extract the bottom-left 10×10 pixel crop as raw RGB, then
+ * scan each frame for high average green. Consecutive green frames are
+ * grouped; the midpoint of each group is reported as the marker time.
+ */
+async function detectMarkers(
+	videoPath: string,
+	fps = 30,
+): Promise<number[]> {
+	const CROP_W = 10;
+	const CROP_H = 10;
+	const FRAME_BYTES = CROP_W * CROP_H * 3; // 300 bytes per frame
+	const GREEN_THRESHOLD = 180;
+
+	// Extract bottom-left 10×10 as raw RGB
+	// Video is 1920×1080, so crop at y = 1080 - 10 = 1070
+	const { stdout } = await execP(
+		"ffprobe",
+		["-v", "error", "-select_streams", "v:0",
+			"-show_entries", "stream=r_frame_rate",
+			"-of", "csv=p=0", videoPath],
+	);
+	const [num, den] = stdout.trim().split("/").map(Number);
+	const detectedFps = den ? num / den : fps;
+
+	return new Promise((resolve, reject) => {
+		const ffmpeg = spawn("ffmpeg", [
+			"-i", videoPath,
+			"-vf", "crop=10:10:0:1070",
+			"-pix_fmt", "rgb24",
+			"-f", "rawvideo",
+			"pipe:1",
+		], { stdio: ["ignore", "pipe", "ignore"] });
+
+		const chunks: Buffer[] = [];
+		ffmpeg.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+		ffmpeg.on("error", reject);
+		ffmpeg.on("close", (code) => {
+			if (code !== 0) {
+				reject(new Error(`ffmpeg marker detection exited with code ${code}`));
+				return;
+			}
+
+			const raw = Buffer.concat(chunks);
+			const totalFrames = Math.floor(raw.length / FRAME_BYTES);
+
+			// Scan for green spikes
+			const markers: number[] = [];
+			let inMarker = false;
+			let groupStart = 0;
+
+			for (let f = 0; f < totalFrames; f++) {
+				const offset = f * FRAME_BYTES;
+				let greenSum = 0;
+				let redSum = 0;
+				let blueSum = 0;
+				const pixels = CROP_W * CROP_H;
+
+				for (let p = 0; p < pixels; p++) {
+					redSum += raw[offset + p * 3];
+					greenSum += raw[offset + p * 3 + 1];
+					blueSum += raw[offset + p * 3 + 2];
+				}
+
+				const avgGreen = greenSum / pixels;
+				const avgRed = redSum / pixels;
+				const avgBlue = blueSum / pixels;
+
+				// Detect bright green: high green channel, low red and blue
+				const isGreen =
+					avgGreen > GREEN_THRESHOLD &&
+					avgGreen > avgRed * 1.5 &&
+					avgGreen > avgBlue * 1.5;
+
+				if (isGreen && !inMarker) {
+					inMarker = true;
+					groupStart = f;
+				} else if (!isGreen && inMarker) {
+					inMarker = false;
+					const midFrame = (groupStart + f - 1) / 2;
+					markers.push(midFrame / detectedFps);
+				}
+			}
+
+			// Handle marker at the very end of video
+			if (inMarker) {
+				const midFrame = (groupStart + totalFrames - 1) / 2;
+				markers.push(midFrame / detectedFps);
+			}
+
+			resolve(markers);
+		});
+	});
+}
+
 export class Recorder {
 	private config: RecordingConfig;
 	private recordingStart = 0;
@@ -1017,6 +1116,7 @@ body { ${bgStyle} }
 			// --- Open widget ---
 			const openStart = this.now();
 			emit("action-start", "Opening widget...", "open-widget");
+			await flashMarker(page); // marker 0: open-widget
 			await toggle.click();
 
 			const panel = widget.locator(".xinfer-panel");
@@ -1071,6 +1171,7 @@ body { ${bgStyle} }
 					queryStart +
 					(query.length * TYPING_DELAY + PAUSE_AFTER_TYPE + 500) / 1000;
 
+				await flashMarker(page); // marker 1+i: query start
 				await sendMessage(page, widget, query, {
 					skipWaitBefore: i === 0,
 				});
@@ -1163,6 +1264,7 @@ body { ${bgStyle} }
 			// --- Zoom out ---
 			const zoomOutStart = this.now();
 			emit("action-start", "Zooming out...", "zoom-out");
+			await flashMarker(page); // marker N: zoom-out
 			await resetZoom(page, panel);
 			await page.waitForTimeout(3000);
 
@@ -1248,30 +1350,142 @@ body { ${bgStyle} }
 				fs.renameSync(vp9TmpPath, rawPath);
 			}
 
-			// Rebase timeline to actual video duration — the wall-clock
-			// timeline may diverge from recorded video time.  Scale all
-			// timestamps so the saved timeline matches the video exactly.
+			// --- Marker-based timeline sync ---
+			// Detect green marker flashes in the video to get ground-truth
+			// per-event timestamps, replacing the old uniform rebase.
 			{
-				const tlEnd =
-					this.timeline[this.timeline.length - 1]?.endTime || 0;
 				const { stdout: durStr } = await execP("ffprobe", [
 					"-v", "error", "-show_entries", "format=duration",
 					"-of", "csv=p=0", rawPath,
 				]);
 				const videoDuration = Number.parseFloat(durStr.trim());
-				const scale = tlEnd > 0 ? videoDuration / tlEnd : 1;
+				const tlEnd =
+					this.timeline[this.timeline.length - 1]?.endTime || 0;
+
+				emit("progress", "Detecting visual markers in video...");
+				let markers: number[] = [];
+				try {
+					markers = await detectMarkers(rawPath);
+				} catch (err) {
+					emit(
+						"progress",
+						`Marker detection failed: ${err instanceof Error ? err.message : err}`,
+					);
+				}
+
+				// Expected markers: open-widget + N queries + zoom-out
+				const narratable = this.timeline.filter(
+					(e) =>
+						e.action === "open-widget" ||
+						e.action.startsWith("query-") ||
+						e.action === "zoom-out",
+				);
+				const expectedCount = narratable.length;
+
 				emit(
 					"progress",
-					`Video ${videoDuration.toFixed(1)}s, wall-clock ${tlEnd.toFixed(1)}s, scale: ${scale.toFixed(3)}`,
+					`Detected ${markers.length} markers (expected ${expectedCount}) at [${markers.map((t) => t.toFixed(2)).join(", ")}]`,
 				);
 
-				if (Math.abs(scale - 1) > 0.005) {
-					emit("progress", "Rebasing timeline to video time...");
-					for (const e of this.timeline) {
-						e.startTime *= scale;
-						e.endTime *= scale;
-						if (e.sendTime != null) e.sendTime *= scale;
-						if (e.responseEndTime != null) e.responseEndTime *= scale;
+				if (markers.length === expectedCount && expectedCount > 0) {
+					// Rebuild timeline using marker timestamps
+					emit("progress", "Rebuilding timeline from markers...");
+					for (let i = 0; i < narratable.length; i++) {
+						const evt = narratable[i];
+						const markerTime = markers[i];
+						const nextMarkerTime =
+							i + 1 < markers.length
+								? markers[i + 1]
+								: videoDuration;
+
+						// Save originals before mutation
+						const origStart = evt.startTime;
+						const origEnd = evt.endTime;
+						const origResponseEnd = evt.responseEndTime;
+						const newDur = nextMarkerTime - markerTime;
+
+						evt.startTime = markerTime;
+						evt.endTime = nextMarkerTime;
+
+						if (evt.action.startsWith("query-") && evt.sendTime != null) {
+							// Recompute sendTime from marker: marker fires before
+							// sendMessage, so typing duration is deterministic
+							const typingDuration =
+								(evt.label.length * TYPING_DELAY +
+									PAUSE_AFTER_TYPE +
+									500) /
+								1000;
+							evt.sendTime = markerTime + typingDuration;
+						} else if (evt.sendTime != null) {
+							evt.sendTime = markerTime;
+						}
+
+						if (origResponseEnd != null) {
+							// Scale responseEndTime proportionally within the event
+							const origDur = origEnd - origStart;
+							const ratio =
+								origDur > 0
+									? (origResponseEnd - origStart) / origDur
+									: 0.8;
+							evt.responseEndTime = markerTime + newDur * ratio;
+						}
+					}
+
+					// Update non-narratable events (page-load, zoom-in)
+					// page-load: 0 → first marker
+					const pageLoad = this.timeline.find(
+						(e) => e.action === "page-load",
+					);
+					if (pageLoad) {
+						pageLoad.startTime = 0;
+						pageLoad.endTime = markers[0];
+						pageLoad.sendTime = 0;
+					}
+
+					// zoom-in: between open-widget and query-1
+					const zoomInEvt = this.timeline.find(
+						(e) => e.action === "zoom-in",
+					);
+					if (zoomInEvt && markers.length >= 2) {
+						const openEnd = narratable.find(
+							(e) => e.action === "open-widget",
+						)?.endTime;
+						const q1Start = narratable.find((e) =>
+							e.action.startsWith("query-"),
+						)?.startTime;
+						if (openEnd != null && q1Start != null) {
+							zoomInEvt.startTime = openEnd;
+							zoomInEvt.endTime = q1Start;
+							zoomInEvt.sendTime = openEnd;
+						}
+					}
+
+					const scale = tlEnd > 0 ? videoDuration / tlEnd : 1;
+					emit(
+						"progress",
+						`Marker sync complete. Video ${videoDuration.toFixed(1)}s, wall-clock ${tlEnd.toFixed(1)}s, effective scale: ${scale.toFixed(3)}`,
+					);
+				} else {
+					// Fallback: uniform rebase (original behavior)
+					emit(
+						"progress",
+						"Marker count mismatch — falling back to uniform rebase",
+					);
+					const scale = tlEnd > 0 ? videoDuration / tlEnd : 1;
+					emit(
+						"progress",
+						`Video ${videoDuration.toFixed(1)}s, wall-clock ${tlEnd.toFixed(1)}s, scale: ${scale.toFixed(3)}`,
+					);
+
+					if (Math.abs(scale - 1) > 0.005) {
+						emit("progress", "Rebasing timeline to video time...");
+						for (const e of this.timeline) {
+							e.startTime *= scale;
+							e.endTime *= scale;
+							if (e.sendTime != null) e.sendTime *= scale;
+							if (e.responseEndTime != null)
+								e.responseEndTime *= scale;
+						}
 					}
 				}
 			}

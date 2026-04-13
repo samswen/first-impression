@@ -31,6 +31,30 @@ const STREAMING_TIMEOUT = 90_000;
 // --- Helpers ---
 
 /**
+ * Flash a 6×6 bright-green dot at bottom-left of the page for ~150 ms.
+ * Used as a visual marker that can be detected in the recorded video
+ * to obtain ground-truth per-event timestamps.
+ */
+export async function flashMarker(
+	page: Page,
+	durationMs = 150,
+): Promise<void> {
+	await page.evaluate(() => {
+		const el = document.createElement("div");
+		el.id = "__fi_marker";
+		el.style.cssText =
+			"position:fixed;bottom:0;left:0;width:6px;height:6px;background:#00FF00;z-index:999999;pointer-events:none;";
+		document.body.appendChild(el);
+	});
+	await page.waitForTimeout(durationMs);
+	await page.evaluate(() => {
+		document.getElementById("__fi_marker")?.remove();
+	});
+	// Brief pause for marker to fully clear from video frames
+	await page.waitForTimeout(70);
+}
+
+/**
  * Wait until streaming is fully done: action bar visible AND no skeleton loaders.
  * The widget's `.chat-action-bar` has `.chat-action-bar-hidden` (display: none)
  * while `isLoading` is true. When streaming finishes, the hidden class is removed.
