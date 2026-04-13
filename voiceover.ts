@@ -142,7 +142,7 @@ export function narrationForEvent(
  * Get audio duration in seconds via ffprobe.
  */
 async function getAudioDuration(filePath: string): Promise<number> {
-	const { stdout } = await execP("ffprobe", [
+	const { stdout, stderr } = await execP("ffprobe", [
 		"-v",
 		"error",
 		"-show_entries",
@@ -151,7 +151,19 @@ async function getAudioDuration(filePath: string): Promise<number> {
 		"csv=p=0",
 		filePath,
 	]);
-	return Number.parseFloat(stdout.trim());
+	const trimmed = stdout.trim();
+	if (!trimmed) {
+		throw new Error(
+			`ffprobe returned empty output for ${filePath}: ${stderr}`,
+		);
+	}
+	const duration = Number.parseFloat(trimmed);
+	if (Number.isNaN(duration)) {
+		throw new Error(
+			`ffprobe returned invalid duration "${trimmed}" for ${filePath}`,
+		);
+	}
+	return duration;
 }
 
 export async function addVoiceover(
