@@ -1112,6 +1112,7 @@ body { ${bgStyle} }
 					ffmpegProc = spawn("ffmpeg", [
 						"-f", "x11grab",
 						"-framerate", "30",
+						"-draw_mouse", "0",
 						"-probesize", "128M",
 						"-thread_queue_size", "1024",
 						"-video_size", `1920x${1080 + chromeHeight}`,
