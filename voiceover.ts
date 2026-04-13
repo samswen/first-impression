@@ -218,6 +218,19 @@ export async function addVoiceover(
 		(e) => e.action === "open-widget" || e.action.startsWith("query-"),
 	);
 
+	// If marker-based sync wasn't used (uniform rebase fallback), absorb
+	// zoom-in time into open-widget so the LLM gets a larger narration
+	// budget that fills the gap before query-1 typing starts.
+	if (Math.abs(timeScale - 1) > 0.01) {
+		const zoomIn = scaledTimeline.find((e) => e.action === "zoom-in");
+		const openWidget = narratableEvents.find(
+			(e) => e.action === "open-widget",
+		);
+		if (zoomIn && openWidget) {
+			openWidget.endTime = zoomIn.endTime;
+		}
+	}
+
 	// Build segments for the narration API
 	// Use 75% of real event duration to give TTS timing headroom.
 	const segments: NarrationSegment[] = narratableEvents.map((e) => ({

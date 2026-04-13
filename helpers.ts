@@ -43,7 +43,7 @@ export async function flashMarker(
 		const el = document.createElement("div");
 		el.id = "__fi_marker";
 		el.style.cssText =
-			"position:fixed;bottom:0;left:0;width:6px;height:6px;background:#00FF00;z-index:999999;pointer-events:none;";
+			"position:fixed;bottom:0;left:0;width:20px;height:20px;background:#00FF00;z-index:999999;pointer-events:none;";
 		document.body.appendChild(el);
 	});
 	await page.waitForTimeout(durationMs);
