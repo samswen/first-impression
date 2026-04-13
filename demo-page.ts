@@ -43,7 +43,7 @@ export function generateDemoPage(opts: DemoPageOptions): string {
 	const tagline = setup.tagline || "";
 	const inventoryDescription = setup.inventoryDescription || "";
 	const versionSuffix = version ? `/v${version}` : "";
-	const baseUrl = `${assetsBaseUrl}/demo/${tenantSlug}${versionSuffix}`;
+	const baseUrl = `${assetsBaseUrl}/demo/${tenantInfo.tenantId}/${tenantSlug}${versionSuffix}`;
 	const ogImage = snapshotFilename ? `${baseUrl}/${snapshotFilename}` : "";
 	const defaultLogo = "https://assets.xinfer.ai/logo-default.png";
 	const tenantLogo = app.logo && app.logo !== defaultLogo ? app.logo : null;
