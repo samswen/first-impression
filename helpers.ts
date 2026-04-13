@@ -145,10 +145,10 @@ export async function zoomToElement(
 
 	console.log(`  Computed scale: ${scale.toFixed(2)}`);
 
-	// Position: horizontally and vertically centered, shifted down slightly.
+	// Position: horizontally and vertically centered.
 	// This ensures the widget fits fully within the viewport with equal margins.
 	const tx = vw / 2 - box.x - (box.width * scale) / 2;
-	const ty = vh / 2 - box.y - (box.height * scale) / 2 + 4;
+	const ty = vh / 2 - box.y - (box.height * scale) / 2;
 
 	await locator.evaluate(
 		(el, { tx, ty, scale, ms }) => {

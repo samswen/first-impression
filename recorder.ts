@@ -919,8 +919,8 @@ body { ${bgStyle} }
 			// Use a large probesize/thread_queue_size to avoid frame drops,
 			// and dedicate 4 encoding threads (leaving 4 cores for the browser).
 			// Capture 1920x1200 (includes browser chrome), then crop to 1920x1080
-			// The crop removes ~120px of browser title/address bar from the top
-			const chromeHeight = 120;
+			// The crop removes browser title/address bar from the top (106px tuned for visual balance)
+			const chromeHeight = 106;
 			ffmpegProc = spawn("ffmpeg", [
 				"-f", "x11grab",
 				"-framerate", "30",
