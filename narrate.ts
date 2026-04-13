@@ -334,15 +334,12 @@ async function renderTextOverlay(
 	// Strip all whitespace control characters (CR, LF, tabs, Unicode line/para
 	// separators) and collapse runs of spaces — AI-generated text often contains
 	// unwanted breaks that cause single-word rows in the overlay.
+	// Strip all whitespace control characters and collapse to single spaces.
+	// Let CSS handle natural line wrapping — no manual wordWrap needed.
 	const clean = text
 		.replace(/[\r\n\t\u2028\u2029]+/g, " ")
 		.replace(/\s+/g, " ")
 		.trim();
-	const wrapped = wordWrap(clean, 55);
-	const lines = wrapped
-		.split("\n")
-		.map((l) => `<span>${escapeHtml(l)}</span>`)
-		.join("");
 
 	const html = `<!DOCTYPE html>
 <html>
@@ -369,9 +366,6 @@ async function renderTextOverlay(
       inset 0 1px 0 rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.1);
     text-align: center;
-  }
-  .card span {
-    display: block;
     font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
     font-size: 32px;
     font-weight: 500;
@@ -379,11 +373,12 @@ async function renderTextOverlay(
     color: #f1f5f9;
     letter-spacing: 0.01em;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    word-wrap: break-word;
   }
 </style>
 </head>
 <body>
-  <div class="card">${lines}</div>
+  <div class="card">${escapeHtml(clean)}</div>
 </body>
 </html>`;
 
@@ -412,22 +407,4 @@ function escapeHtml(s: string): string {
 		.replace(/</g, "&lt;")
 		.replace(/>/g, "&gt;")
 		.replace(/"/g, "&quot;");
-}
-
-function wordWrap(text: string, maxCharsPerLine: number): string {
-	const words = text.split(" ");
-	const lines: string[] = [];
-	let current = "";
-
-	for (const word of words) {
-		if (current && current.length + 1 + word.length > maxCharsPerLine) {
-			lines.push(current);
-			current = word;
-		} else {
-			current = current ? `${current} ${word}` : word;
-		}
-	}
-	if (current) lines.push(current);
-
-	return lines.join("\n");
 }
