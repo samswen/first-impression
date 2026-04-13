@@ -643,25 +643,30 @@ async function loadPageForSnapshot(
 	return imageStats;
 }
 
+interface MarkerResult {
+	markers: number[];
+	diag: string;
+}
+
 /**
  * Scan the bottom-left corner of a video for bright-green marker flashes.
- * Returns an array of video timestamps (seconds) where markers were detected.
+ * Returns an array of video timestamps (seconds) where markers were detected,
+ * plus a diagnostic string for logging.
  *
- * How it works: extract the bottom-left 10×10 pixel crop as raw RGB, then
+ * How it works: extract the bottom-left 20×20 pixel crop as raw RGB, then
  * scan each frame for high average green. Consecutive green frames are
  * grouped; the midpoint of each group is reported as the marker time.
  */
 async function detectMarkers(
 	videoPath: string,
 	fps = 30,
-): Promise<number[]> {
-	const CROP_W = 10;
-	const CROP_H = 10;
-	const FRAME_BYTES = CROP_W * CROP_H * 3; // 300 bytes per frame
-	const GREEN_THRESHOLD = 180;
+): Promise<MarkerResult> {
+	const CROP_W = 20;
+	const CROP_H = 20;
+	const FRAME_BYTES = CROP_W * CROP_H * 3; // 1200 bytes per frame
+	const GREEN_THRESHOLD = 120;
 
-	// Extract bottom-left 10×10 as raw RGB
-	// Video is 1920×1080, so crop at y = 1080 - 10 = 1070
+	// Get frame rate from video
 	const { stdout } = await execP(
 		"ffprobe",
 		["-v", "error", "-select_streams", "v:0",
@@ -671,26 +676,49 @@ async function detectMarkers(
 	const [num, den] = stdout.trim().split("/").map(Number);
 	const detectedFps = den ? num / den : fps;
 
+	// Also get video dimensions to compute crop position
+	const { stdout: dimStr } = await execP(
+		"ffprobe",
+		["-v", "error", "-select_streams", "v:0",
+			"-show_entries", "stream=width,height",
+			"-of", "csv=p=0", videoPath],
+	);
+	const [vidW, vidH] = dimStr.trim().split(",").map(Number);
+	const cropY = (vidH || 1080) - CROP_H;
+
 	return new Promise((resolve, reject) => {
+		const stderrChunks: Buffer[] = [];
 		const ffmpeg = spawn("ffmpeg", [
 			"-i", videoPath,
-			"-vf", "crop=10:10:0:1070",
+			"-vf", `crop=${CROP_W}:${CROP_H}:0:${cropY}`,
 			"-pix_fmt", "rgb24",
 			"-f", "rawvideo",
 			"pipe:1",
-		], { stdio: ["ignore", "pipe", "ignore"] });
+		], { stdio: ["ignore", "pipe", "pipe"] });
 
 		const chunks: Buffer[] = [];
 		ffmpeg.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+		ffmpeg.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
 		ffmpeg.on("error", reject);
 		ffmpeg.on("close", (code) => {
+			const stderr = Buffer.concat(stderrChunks).toString().slice(-500);
 			if (code !== 0) {
-				reject(new Error(`ffmpeg marker detection exited with code ${code}`));
+				reject(new Error(`ffmpeg marker detection exit ${code}: ${stderr}`));
 				return;
 			}
 
 			const raw = Buffer.concat(chunks);
 			const totalFrames = Math.floor(raw.length / FRAME_BYTES);
+
+			// Build diagnostics
+			const diagLines: string[] = [
+				`video=${vidW}x${vidH} fps=${detectedFps.toFixed(1)} cropY=${cropY}`,
+				`rawBytes=${raw.length} frames=${totalFrames}`,
+			];
+
+			// Log peak green values across all frames for debugging
+			let peakGreen = 0;
+			let peakFrame = 0;
 
 			// Scan for green spikes
 			const markers: number[] = [];
@@ -714,6 +742,11 @@ async function detectMarkers(
 				const avgRed = redSum / pixels;
 				const avgBlue = blueSum / pixels;
 
+				if (avgGreen > peakGreen) {
+					peakGreen = avgGreen;
+					peakFrame = f;
+				}
+
 				// Detect bright green: high green channel, low red and blue
 				const isGreen =
 					avgGreen > GREEN_THRESHOLD &&
@@ -736,7 +769,24 @@ async function detectMarkers(
 				markers.push(midFrame / detectedFps);
 			}
 
-			resolve(markers);
+			// Sample the peak frame for diagnostics
+			if (totalFrames > 0) {
+				const off = peakFrame * FRAME_BYTES;
+				const pixels = CROP_W * CROP_H;
+				let r = 0;
+				let g = 0;
+				let b = 0;
+				for (let p = 0; p < pixels; p++) {
+					r += raw[off + p * 3];
+					g += raw[off + p * 3 + 1];
+					b += raw[off + p * 3 + 2];
+				}
+				diagLines.push(
+					`peakFrame=${peakFrame} (${(peakFrame / detectedFps).toFixed(1)}s) avgRGB=${(r / pixels).toFixed(0)},${(g / pixels).toFixed(0)},${(b / pixels).toFixed(0)}`,
+				);
+			}
+
+			resolve({ markers, diag: diagLines.join(" | ") });
 		});
 	});
 }
@@ -1307,47 +1357,14 @@ body { ${bgStyle} }
 					throw new Error("No video file found — ffmpeg x11grab failed");
 				}
 			} else {
-				// macOS: Playwright's VFR recording — find and re-encode
+				// macOS: Playwright's VFR recording — just rename the file.
+				// Marker-based sync handles the VFR timing mismatch.
 				const files = fs.readdirSync(dir).filter((f) => f.endsWith(".webm"));
 				const videoFile = files[0];
 				if (!videoFile) {
 					throw new Error("No video file found in recording directory");
 				}
 				fs.renameSync(path.join(dir, videoFile), rawPath);
-
-				// Stretch VFR video to match wall-clock timeline
-				const timelineEnd =
-					this.timeline[this.timeline.length - 1]?.endTime || 0;
-				const { stdout: vp8Str } = await execP("ffprobe", [
-					"-v", "error", "-show_entries", "format=duration",
-					"-of", "csv=p=0", rawPath,
-				]);
-				const vp8Duration = Number.parseFloat(vp8Str.trim());
-				const needsStretch =
-					timelineEnd > 0 &&
-					vp8Duration > 0 &&
-					Math.abs(vp8Duration - timelineEnd) > 1;
-				const ptsFactor = needsStretch ? timelineEnd / vp8Duration : 1;
-
-				if (needsStretch) {
-					emit(
-						"progress",
-						`Video ${vp8Duration.toFixed(1)}s vs timeline ${timelineEnd.toFixed(1)}s, stretching ${ptsFactor.toFixed(3)}x`,
-					);
-				}
-
-				emit("progress", "Re-encoding to VP9...");
-				const vp9TmpPath = path.join(dir, "raw-vp9.webm");
-				await execP("ffmpeg", [
-					"-i", rawPath,
-					...(needsStretch
-						? ["-vf", `setpts=PTS*${ptsFactor.toFixed(6)}`]
-						: []),
-					"-c:v", "libvpx-vp9", "-b:v", "2M",
-					"-cpu-used", "4", "-pix_fmt", "yuv420p",
-					"-c:a", "libopus", "-y", vp9TmpPath,
-				], { timeout: 5 * 60 * 1000, maxBuffer: 10 * 1024 * 1024 });
-				fs.renameSync(vp9TmpPath, rawPath);
 			}
 
 			// --- Marker-based timeline sync ---
@@ -1365,7 +1382,9 @@ body { ${bgStyle} }
 				emit("progress", "Detecting visual markers in video...");
 				let markers: number[] = [];
 				try {
-					markers = await detectMarkers(rawPath);
+					const result = await detectMarkers(rawPath);
+					markers = result.markers;
+					emit("progress", `Marker diag: ${result.diag}`);
 				} catch (err) {
 					emit(
 						"progress",
