@@ -661,9 +661,9 @@ async function detectMarkers(
 	videoPath: string,
 	fps = 30,
 ): Promise<MarkerResult> {
-	const CROP_W = 20;
-	const CROP_H = 20;
-	const FRAME_BYTES = CROP_W * CROP_H * 3; // 1200 bytes per frame
+	const CROP_W = 8;
+	const CROP_H = 8;
+	const FRAME_BYTES = CROP_W * CROP_H * 3; // 192 bytes per frame
 	const GREEN_THRESHOLD = 120;
 
 	// Get frame rate from video
