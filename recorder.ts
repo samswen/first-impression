@@ -1196,6 +1196,13 @@ body { ${bgStyle} }
 			await panel.waitFor({ state: "visible", timeout: 5000 });
 			const input = widget.locator("#xinfer-input");
 			await input.waitFor({ state: "visible", timeout: 5000 });
+
+			// Expand the panel to use the full viewport height
+			await panel.evaluate((el) => {
+				const s = el as HTMLElement;
+				s.style.height = "95vh";
+				s.style.maxHeight = "95vh";
+			});
 			await page.waitForTimeout(3000);
 
 			const openElapsed = (this.now() - openStart) * 1000;
