@@ -860,7 +860,6 @@ body { ${bgStyle} }
 		let xvfbProc: ChildProcess | null = null;
 		let ffmpegProc: ChildProcess | null = null;
 		const rawPath = path.join(dir, "raw.webm");
-		const capturePath = path.join(dir, "raw-capture.mkv");
 
 		if (useX11Grab) {
 			// Start Xvfb if not already running
@@ -959,9 +958,8 @@ body { ${bgStyle} }
 			// so the recording doesn't begin with a blank Xvfb screen.
 			if (useX11Grab) {
 				const chromeHeight = 110;
-				// Record with H264 ultrafast — VP9 real-time encoding drops frames
-				// at 1080p30 on ARM, causing video duration < wall-clock time.
-				// H264 ultrafast handles 30fps trivially; we transcode to VP9 afterward.
+				const ffmpegLog = path.join(dir, "ffmpeg-capture.log");
+				const ffmpegLogFd = fs.openSync(ffmpegLog, "w");
 				ffmpegProc = spawn("ffmpeg", [
 					"-f", "x11grab",
 					"-framerate", "30",
@@ -970,13 +968,14 @@ body { ${bgStyle} }
 					"-video_size", `1920x${1080 + chromeHeight}`,
 					"-i", DISPLAY,
 					"-vf", `crop=1920:1080:0:${chromeHeight}`,
-					"-c:v", "libx264",
-					"-preset", "ultrafast",
-					"-crf", "18",
+					"-c:v", "libvpx-vp9",
+					"-b:v", "2M",
+					"-cpu-used", "4",
+					"-threads", "4",
 					"-pix_fmt", "yuv420p",
 					"-y",
-					capturePath,
-				], { stdio: ["pipe", "ignore", "ignore"] });
+					rawPath,
+				], { stdio: ["pipe", "ignore", ffmpegLogFd] });
 				// Give ffmpeg a moment to initialize
 				await new Promise((r) => setTimeout(r, 500));
 			}
@@ -1197,26 +1196,9 @@ body { ${bgStyle} }
 					xvfbProc.kill();
 				}
 
-				if (!fs.existsSync(capturePath)) {
+				if (!fs.existsSync(rawPath)) {
 					throw new Error("No video file found — ffmpeg x11grab failed");
 				}
-
-				// Transcode H264 → VP9 (offline, no real-time constraint)
-				emit("progress", "Transcoding H264 → VP9...");
-				await execP("ffmpeg", [
-					"-i", capturePath,
-					"-c:v", "libvpx-vp9",
-					"-b:v", "2M",
-					"-cpu-used", "4",
-					"-threads", "4",
-					"-pix_fmt", "yuv420p",
-					"-an",
-					"-y",
-					rawPath,
-				], { timeout: 10 * 60 * 1000, maxBuffer: 10 * 1024 * 1024 });
-
-				// Clean up intermediate capture file
-				try { fs.unlinkSync(capturePath); } catch {}
 			} else {
 				// macOS: Playwright's VFR recording — find and re-encode
 				const files = fs.readdirSync(dir).filter((f) => f.endsWith(".webm"));
@@ -1261,7 +1243,9 @@ body { ${bgStyle} }
 				fs.renameSync(vp9TmpPath, rawPath);
 			}
 
-			// Log video vs timeline duration for diagnostics
+			// Rebase timeline to actual video duration — the wall-clock
+			// timeline may diverge from recorded video time.  Scale all
+			// timestamps so the saved timeline matches the video exactly.
 			{
 				const tlEnd =
 					this.timeline[this.timeline.length - 1]?.endTime || 0;
@@ -1273,12 +1257,21 @@ body { ${bgStyle} }
 				const scale = tlEnd > 0 ? videoDuration / tlEnd : 1;
 				emit(
 					"progress",
-					`Video ${videoDuration.toFixed(1)}s, timeline ${tlEnd.toFixed(1)}s, scale: ${scale.toFixed(3)}` +
-						(useX11Grab ? " (H264→VP9 transcode)" : ""),
+					`Video ${videoDuration.toFixed(1)}s, wall-clock ${tlEnd.toFixed(1)}s, scale: ${scale.toFixed(3)}`,
 				);
+
+				if (Math.abs(scale - 1) > 0.005) {
+					emit("progress", "Rebasing timeline to video time...");
+					for (const e of this.timeline) {
+						e.startTime *= scale;
+						e.endTime *= scale;
+						if (e.sendTime != null) e.sendTime *= scale;
+						if (e.responseEndTime != null) e.responseEndTime *= scale;
+					}
+				}
 			}
 
-			// Save timeline
+			// Save timeline (already in video-relative time)
 			const timelinePath = path.join(dir, "timeline.json");
 			fs.writeFileSync(timelinePath, JSON.stringify(this.timeline, null, 2));
 
