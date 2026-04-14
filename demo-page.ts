@@ -672,6 +672,13 @@ export function generateDemoPage(opts: DemoPageOptions): string {
       .collapsible-details[open] .collapsible-summary h2 { font-size: 24px; }
       .channel-grid { grid-template-columns: 1fr; }
       .try-grid { grid-template-columns: 1fr; }
+      .try-card { padding: 24px 18px; }
+      .try-card h3 { font-size: 16px; }
+      .try-card > p { font-size: 13px; }
+      .try-code code { white-space: pre-wrap; word-break: break-all; }
+      .try-links { flex-direction: column; }
+      .try-links .try-btn { justify-content: center; }
+      .try-steps li { font-size: 13px; gap: 10px; }
       .container, .container-narrow { padding: 0 16px; }
       .cta-section { padding: 64px 0; }
       .footer-inner { flex-direction: column; text-align: center; }
