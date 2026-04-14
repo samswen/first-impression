@@ -38,10 +38,7 @@ const STREAMING_TIMEOUT = 90_000;
  * Top-left is used because it maps to video pixel (0,0) on both x11grab
  * and avfoundation — no crop-boundary edge cases like bottom-left has.
  */
-export async function flashMarker(
-	page: Page,
-	durationMs = 150,
-): Promise<void> {
+export async function flashMarker(page: Page, durationMs = 150): Promise<void> {
 	await page.evaluate(() => {
 		const el = document.createElement("div");
 		el.id = "__fi_marker";
@@ -173,7 +170,11 @@ export async function zoomToElement(
 
 	// Compute scale so the panel fills most of the viewport with small margins.
 	// 90% width, 95% height ensures the widget stays fully within viewport bounds.
-	const scale = Math.min(maxScale, (vw * 0.9) / box.width, (vh * 0.95) / box.height);
+	const scale = Math.min(
+		maxScale,
+		(vw * 0.9) / box.width,
+		(vh * 0.95) / box.height,
+	);
 
 	console.log(`  Computed scale: ${scale.toFixed(2)}`);
 

@@ -153,9 +153,7 @@ async function getAudioDuration(filePath: string): Promise<number> {
 	]);
 	const trimmed = stdout.trim();
 	if (!trimmed) {
-		throw new Error(
-			`ffprobe returned empty output for ${filePath}: ${stderr}`,
-		);
+		throw new Error(`ffprobe returned empty output for ${filePath}: ${stderr}`);
 	}
 	const duration = Number.parseFloat(trimmed);
 	if (Number.isNaN(duration)) {

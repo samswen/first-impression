@@ -9,17 +9,17 @@ import { getPlaywrightProxy } from "./proxy";
 const execP = promisify(execFile);
 
 import {
+	flashMarker,
 	MIN_OPEN_WIDGET_DURATION,
 	MIN_QUERY_DURATION,
 	MIN_QUERY_WITH_FORM_DURATION,
 	PAUSE_AFTER_RESPONSE,
 	PAUSE_AFTER_TYPE,
-	ZOOM_SETTLE_DURATION,
-	flashMarker,
 	resetZoom,
 	sendMessage,
 	TYPING_DELAY,
 	waitForResponseDone,
+	ZOOM_SETTLE_DURATION,
 	zoomToElement,
 } from "./helpers";
 import { solveTurnstile } from "./turnstile-solver";
@@ -667,35 +667,53 @@ async function detectMarkers(
 	const GREEN_THRESHOLD = 120;
 
 	// Get frame rate from video
-	const { stdout } = await execP(
-		"ffprobe",
-		["-v", "error", "-select_streams", "v:0",
-			"-show_entries", "stream=r_frame_rate",
-			"-of", "csv=p=0", videoPath],
-	);
+	const { stdout } = await execP("ffprobe", [
+		"-v",
+		"error",
+		"-select_streams",
+		"v:0",
+		"-show_entries",
+		"stream=r_frame_rate",
+		"-of",
+		"csv=p=0",
+		videoPath,
+	]);
 	const [num, den] = stdout.trim().split("/").map(Number);
 	const detectedFps = den ? num / den : fps;
 
 	// Also get video dimensions for diagnostics
-	const { stdout: dimStr } = await execP(
-		"ffprobe",
-		["-v", "error", "-select_streams", "v:0",
-			"-show_entries", "stream=width,height",
-			"-of", "csv=p=0", videoPath],
-	);
+	const { stdout: dimStr } = await execP("ffprobe", [
+		"-v",
+		"error",
+		"-select_streams",
+		"v:0",
+		"-show_entries",
+		"stream=width,height",
+		"-of",
+		"csv=p=0",
+		videoPath,
+	]);
 	const [vidW, vidH] = dimStr.trim().split(",").map(Number);
 	// Marker is at bottom-left — crop the bottom 8 rows
 	const cropY = vidH - CROP_H;
 
 	return new Promise((resolve, reject) => {
 		const stderrChunks: Buffer[] = [];
-		const ffmpeg = spawn("ffmpeg", [
-			"-i", videoPath,
-			"-vf", `crop=${CROP_W}:${CROP_H}:0:${cropY}`,
-			"-pix_fmt", "rgb24",
-			"-f", "rawvideo",
-			"pipe:1",
-		], { stdio: ["ignore", "pipe", "pipe"] });
+		const ffmpeg = spawn(
+			"ffmpeg",
+			[
+				"-i",
+				videoPath,
+				"-vf",
+				`crop=${CROP_W}:${CROP_H}:0:${cropY}`,
+				"-pix_fmt",
+				"rgb24",
+				"-f",
+				"rawvideo",
+				"pipe:1",
+			],
+			{ stdio: ["ignore", "pipe", "pipe"] },
+		);
 
 		const chunks: Buffer[] = [];
 		ffmpeg.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -1109,23 +1127,40 @@ body { ${bgStyle} }
 						() => window.outerHeight - window.innerHeight,
 					);
 					emit("progress", `x11grab: chromeHeight=${chromeHeight}`);
-					ffmpegProc = spawn("ffmpeg", [
-						"-f", "x11grab",
-						"-framerate", "30",
-						"-draw_mouse", "0",
-						"-probesize", "128M",
-						"-thread_queue_size", "1024",
-						"-video_size", `1920x${1080 + chromeHeight}`,
-						"-i", DISPLAY,
-						"-vf", `crop=1920:1080:0:${chromeHeight}`,
-						"-c:v", "libvpx-vp9",
-						"-b:v", "2M",
-						"-cpu-used", "4",
-						"-threads", "4",
-						"-pix_fmt", "yuv420p",
-						"-y",
-						rawPath,
-					], { stdio: ["pipe", "ignore", ffmpegLogFd] });
+					ffmpegProc = spawn(
+						"ffmpeg",
+						[
+							"-f",
+							"x11grab",
+							"-framerate",
+							"30",
+							"-draw_mouse",
+							"0",
+							"-probesize",
+							"128M",
+							"-thread_queue_size",
+							"1024",
+							"-video_size",
+							`1920x${1080 + chromeHeight}`,
+							"-i",
+							DISPLAY,
+							"-vf",
+							`crop=1920:1080:0:${chromeHeight}`,
+							"-c:v",
+							"libvpx-vp9",
+							"-b:v",
+							"2M",
+							"-cpu-used",
+							"4",
+							"-threads",
+							"4",
+							"-pix_fmt",
+							"yuv420p",
+							"-y",
+							rawPath,
+						],
+						{ stdio: ["pipe", "ignore", ffmpegLogFd] },
+					);
 				} else {
 					// macOS: avfoundation screen capture
 					// Dynamically find "Capture screen 0" device index
@@ -1133,28 +1168,35 @@ body { ${bgStyle} }
 					let screenDeviceIndex = "3";
 					try {
 						const devResult = await execP("ffmpeg", [
-							"-f", "avfoundation",
-							"-list_devices", "true",
-							"-i", "",
+							"-f",
+							"avfoundation",
+							"-list_devices",
+							"true",
+							"-i",
+							"",
 						]).catch((e: any) => ({ stdout: "", stderr: e.stderr || "" }));
 						const match = devResult.stderr.match(/\[(\d+)\] Capture screen 0/);
 						if (match) {
 							screenDeviceIndex = match[1];
 						}
-						emit("progress", `avfoundation: screen device index=${screenDeviceIndex}`);
+						emit(
+							"progress",
+							`avfoundation: screen device index=${screenDeviceIndex}`,
+						);
 					} catch {
-						emit("progress", `avfoundation: device detection failed, using index ${screenDeviceIndex}`);
+						emit(
+							"progress",
+							`avfoundation: device detection failed, using index ${screenDeviceIndex}`,
+						);
 					}
 
 					// Measure browser chrome height and Retina pixel ratio
-					const dpr = await page.evaluate(() => window.devicePixelRatio) || 1;
+					const dpr = (await page.evaluate(() => window.devicePixelRatio)) || 1;
 					const chromeH = await page.evaluate(
 						() => window.outerHeight - window.innerHeight,
 					);
 					const screenY = await page.evaluate(() => window.screenY);
-					const screenH = await page.evaluate(
-						() => window.screen.height,
-					);
+					const screenH = await page.evaluate(() => window.screen.height);
 					const contentTop = Math.round((screenY + chromeH) * dpr);
 					const screenPixH = Math.round(screenH * dpr);
 					// Clip crop height to available screen space
@@ -1170,28 +1212,46 @@ body { ${bgStyle} }
 						"progress",
 						`avfoundation: dpr=${dpr} screenY=${screenY} chromeH=${chromeH} screenH=${screenH} crop=${cropW}x${cropH}+0+${contentTop}`,
 					);
-					ffmpegProc = spawn("ffmpeg", [
-						"-f", "avfoundation",
-						"-framerate", "30",
-						"-capture_cursor", "0",
-						"-probesize", "128M",
-						"-thread_queue_size", "1024",
-						"-i", `${screenDeviceIndex}:none`,
-						"-vf", `crop=${cropW}:${cropH}:0:${contentTop},scale=1920:1080`,
-						"-c:v", "libvpx-vp9",
-						"-b:v", "2M",
-						"-cpu-used", "4",
-						"-threads", "4",
-						"-pix_fmt", "yuv420p",
-						"-y",
-						rawPath,
-					], { stdio: ["pipe", "ignore", ffmpegLogFd] });
+					ffmpegProc = spawn(
+						"ffmpeg",
+						[
+							"-f",
+							"avfoundation",
+							"-framerate",
+							"30",
+							"-capture_cursor",
+							"0",
+							"-probesize",
+							"128M",
+							"-thread_queue_size",
+							"1024",
+							"-i",
+							`${screenDeviceIndex}:none`,
+							"-vf",
+							`crop=${cropW}:${cropH}:0:${contentTop},scale=1920:1080`,
+							"-c:v",
+							"libvpx-vp9",
+							"-b:v",
+							"2M",
+							"-cpu-used",
+							"4",
+							"-threads",
+							"4",
+							"-pix_fmt",
+							"yuv420p",
+							"-y",
+							rawPath,
+						],
+						{ stdio: ["pipe", "ignore", ffmpegLogFd] },
+					);
 				}
 				// Give ffmpeg a moment to initialize and detect early exit
 				await new Promise((r) => setTimeout(r, 500));
 				if (ffmpegProc && ffmpegProc.exitCode !== null) {
 					const logContent = fs.existsSync(path.join(dir, "ffmpeg-capture.log"))
-						? fs.readFileSync(path.join(dir, "ffmpeg-capture.log"), "utf-8").slice(-500)
+						? fs
+								.readFileSync(path.join(dir, "ffmpeg-capture.log"), "utf-8")
+								.slice(-500)
 						: "no log";
 					throw new Error(
 						`ffmpeg exited immediately (code ${ffmpegProc.exitCode}). Log: ${logContent}`,
@@ -1199,7 +1259,18 @@ body { ${bgStyle} }
 				}
 			}
 
-			// Start the timeline clock only after the page is visible with widget
+			// On Xvfb the display buffer can take several seconds to sync after
+			// Chromium paints. Rather than guessing when it's ready, we let ffmpeg
+			// record a 10s warmup that we'll trim off afterwards. This works
+			// universally regardless of site content or background color.
+			const WARMUP_SECONDS = isLinux ? 10 : 0;
+			if (WARMUP_SECONDS > 0) {
+				emit("progress", `Display warmup: ${WARMUP_SECONDS}s...`);
+				await page.waitForTimeout(WARMUP_SECONDS * 1000);
+			}
+
+			// Start the timeline clock only after warmup — everything before
+			// this point will be trimmed from the raw video.
 			this.recordingStart = Date.now();
 
 			await page.waitForTimeout(2000);
@@ -1405,17 +1476,42 @@ body { ${bgStyle} }
 				throw new Error("No video file found — ffmpeg recording failed");
 			}
 
+			// Trim the warmup period from the start of the recording.
+			// The first WARMUP_SECONDS were recorded while Xvfb was still
+			// syncing — we discard them so the video starts clean.
+			if (WARMUP_SECONDS > 0) {
+				emit("progress", `Trimming ${WARMUP_SECONDS}s warmup from recording...`);
+				const untrimmedPath = rawPath.replace(".webm", "-untrimmed.webm");
+				fs.renameSync(rawPath, untrimmedPath);
+				await execP("ffmpeg", [
+					"-ss",
+					String(WARMUP_SECONDS),
+					"-i",
+					untrimmedPath,
+					"-c",
+					"copy",
+					"-y",
+					rawPath,
+				]);
+				fs.unlinkSync(untrimmedPath);
+				emit("progress", "Warmup trimmed");
+			}
+
 			// --- Marker-based timeline sync ---
 			// Detect green marker flashes in the video to get ground-truth
 			// per-event timestamps, replacing the old uniform rebase.
 			{
 				const { stdout: durStr } = await execP("ffprobe", [
-					"-v", "error", "-show_entries", "format=duration",
-					"-of", "csv=p=0", rawPath,
+					"-v",
+					"error",
+					"-show_entries",
+					"format=duration",
+					"-of",
+					"csv=p=0",
+					rawPath,
 				]);
 				const videoDuration = Number.parseFloat(durStr.trim());
-				const tlEnd =
-					this.timeline[this.timeline.length - 1]?.endTime || 0;
+				const tlEnd = this.timeline[this.timeline.length - 1]?.endTime || 0;
 
 				emit("progress", "Detecting visual markers in video...");
 				let markers: number[] = [];
@@ -1433,9 +1529,7 @@ body { ${bgStyle} }
 				// Expected markers: N queries + zoom-out (no open-widget marker —
 				// it fires too early when ffmpeg may still be warming up)
 				const markerEvents = this.timeline.filter(
-					(e) =>
-						e.action.startsWith("query-") ||
-						e.action === "zoom-out",
+					(e) => e.action.startsWith("query-") || e.action === "zoom-out",
 				);
 				const expectedCount = markerEvents.length;
 
@@ -1451,9 +1545,7 @@ body { ${bgStyle} }
 						const evt = markerEvents[i];
 						const markerTime = markers[i];
 						const nextMarkerTime =
-							i + 1 < markers.length
-								? markers[i + 1]
-								: videoDuration;
+							i + 1 < markers.length ? markers[i + 1] : videoDuration;
 
 						// Save originals before mutation
 						const origStart = evt.startTime;
@@ -1468,9 +1560,7 @@ body { ${bgStyle} }
 							// Recompute sendTime from marker: marker fires before
 							// sendMessage, so typing duration is deterministic
 							const typingDuration =
-								(evt.label.length * TYPING_DELAY +
-									PAUSE_AFTER_TYPE +
-									500) /
+								(evt.label.length * TYPING_DELAY + PAUSE_AFTER_TYPE + 500) /
 								1000;
 							evt.sendTime = markerTime + typingDuration;
 						} else if (evt.sendTime != null) {
@@ -1481,9 +1571,7 @@ body { ${bgStyle} }
 							// Scale responseEndTime proportionally within the event
 							const origDur = origEnd - origStart;
 							const ratio =
-								origDur > 0
-									? (origResponseEnd - origStart) / origDur
-									: 0.8;
+								origDur > 0 ? (origResponseEnd - origStart) / origDur : 0.8;
 							evt.responseEndTime = markerTime + newDur * ratio;
 						}
 					}
@@ -1500,16 +1588,11 @@ body { ${bgStyle} }
 					}
 
 					// page-load: first few seconds (use original ratio)
-					const pageLoad = this.timeline.find(
-						(e) => e.action === "page-load",
-					);
+					const pageLoad = this.timeline.find((e) => e.action === "page-load");
 					if (pageLoad && openWidget) {
 						const scale = tlEnd > 0 ? videoDuration / tlEnd : 1;
 						pageLoad.startTime = 0;
-						pageLoad.endTime = Math.min(
-							pageLoad.endTime * scale,
-							markers[0],
-						);
+						pageLoad.endTime = Math.min(pageLoad.endTime * scale, markers[0]);
 						pageLoad.sendTime = 0;
 						// open-widget starts after page-load
 						openWidget.startTime = pageLoad.endTime;
@@ -1517,9 +1600,7 @@ body { ${bgStyle} }
 
 					// zoom-in: spans from partway through open-widget to query-1
 					// Use original proportions to split open-widget vs zoom-in
-					const zoomInEvt = this.timeline.find(
-						(e) => e.action === "zoom-in",
-					);
+					const zoomInEvt = this.timeline.find((e) => e.action === "zoom-in");
 					if (zoomInEvt && openWidget) {
 						// zoom-in gets the tail end of the pre-query period
 						const scale = tlEnd > 0 ? videoDuration / tlEnd : 1;
@@ -1554,8 +1635,7 @@ body { ${bgStyle} }
 							e.startTime *= scale;
 							e.endTime *= scale;
 							if (e.sendTime != null) e.sendTime *= scale;
-							if (e.responseEndTime != null)
-								e.responseEndTime *= scale;
+							if (e.responseEndTime != null) e.responseEndTime *= scale;
 						}
 					}
 				}
