@@ -33,6 +33,8 @@ export interface PublishOptions {
 	autoCreateUser?: boolean; // auto-create user if email not found (CLI only)
 	subtitle?: string; // AI-generated hero subtitle for demo page
 	generatedContent?: Record<string, unknown>; // AI-generated text fields to save in snapshot
+	chatId?: string; // Widget chat ID for investigation
+	failureReason?: string; // Structured quality failure reason
 }
 
 export interface PublishResult {
@@ -59,6 +61,9 @@ interface PublishApiRequest {
 	userId?: number;
 	userEmail?: string;
 	autoCreateUser?: boolean;
+	status?: string;
+	chatId?: string;
+	failureReason?: string;
 }
 
 interface PublishApiResponse {
@@ -146,6 +151,7 @@ export async function publishDemo(
 		email,
 		autoCreateUser,
 		generatedContent,
+		chatId,
 	} = opts;
 
 	// Read video and compute content hash for dedup (skip when forcing)
@@ -210,6 +216,7 @@ export async function publishDemo(
 			userId,
 			userEmail: email,
 			autoCreateUser,
+			chatId,
 		});
 
 	// If the API detected identical content, skip all uploads
@@ -369,6 +376,119 @@ export async function publishDemo(
 			uploads["__dir_slash__"].url,
 			html,
 			"text/html; charset=utf-8",
+		);
+	}
+
+	return { url: baseUrl, publishedId: publishedId ?? undefined, version };
+}
+
+export interface FailureReportOptions {
+	tenantInfo: TenantInfo;
+	tenantSlug: string;
+	recordingDir: string;
+	config?: Record<string, unknown>;
+	email?: string;
+	chatId?: string;
+	failureReason?: string;
+}
+
+/**
+ * Upload recording artifacts as a failure report.
+ * Collects all useful files (video, timeline, config, state, snapshots,
+ * voiceover clips, pipeline log) — skips index.html and demo.html.
+ */
+export async function publishFailureReport(
+	opts: FailureReportOptions,
+): Promise<PublishResult> {
+	const { tenantInfo, tenantSlug, recordingDir, config, email, chatId, failureReason } = opts;
+
+	// Content type mapping for known extensions
+	const contentTypes: Record<string, string> = {
+		".webm": "video/webm",
+		".mp3": "audio/mpeg",
+		".png": "image/png",
+		".jpg": "image/jpeg",
+		".json": "application/json",
+		".log": "text/plain",
+		".txt": "text/plain",
+	};
+
+	// Collect files to upload (recursively, skip html files)
+	const skipFiles = new Set(["index.html", "demo.html"]);
+	const filesToUpload: { relativePath: string; absolutePath: string }[] = [];
+
+	function collectFiles(dir: string, prefix: string) {
+		if (!fs.existsSync(dir)) return;
+		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+			if (entry.isDirectory()) {
+				collectFiles(
+					`${dir}/${entry.name}`,
+					prefix ? `${prefix}/${entry.name}` : entry.name,
+				);
+			} else if (!skipFiles.has(entry.name)) {
+				filesToUpload.push({
+					relativePath: prefix ? `${prefix}/${entry.name}` : entry.name,
+					absolutePath: `${dir}/${entry.name}`,
+				});
+			}
+		}
+	}
+
+	collectFiles(recordingDir, "");
+
+	// Also include pipeline log if set
+	const pipelineLogPath = process.env.FI_PIPELINE_LOG;
+	if (pipelineLogPath && fs.existsSync(pipelineLogPath)) {
+		filesToUpload.push({
+			relativePath: "pipeline.log",
+			absolutePath: pipelineLogPath,
+		});
+	}
+
+	// Build file list for presigned URLs
+	const files = filesToUpload.map((f) => {
+		const ext = f.relativePath.substring(f.relativePath.lastIndexOf("."));
+		return {
+			name: f.relativePath,
+			contentType: contentTypes[ext] || "application/octet-stream",
+		};
+	});
+
+	// Find the best video for the DB record
+	const videoFile =
+		filesToUpload.find((f) => f.relativePath.endsWith(".webm"))
+			?.relativePath || "raw.webm";
+
+	const tenantSnapshot: Record<string, unknown> = {
+		...(tenantInfo as unknown as Record<string, unknown>),
+	};
+
+	const { uploads, baseUrl, publishedId, version } = await callPublishApi(
+		tenantInfo.tenantId,
+		{
+			slug: tenantSlug,
+			files,
+			videoFile,
+			config,
+			tenantSnapshot,
+			userEmail: email,
+			autoCreateUser: true,
+			status: "failed",
+			chatId,
+			failureReason,
+		},
+	);
+
+	// Upload all collected files
+	for (const file of filesToUpload) {
+		const upload = uploads[file.relativePath];
+		if (!upload) continue;
+		const buffer = fs.readFileSync(file.absolutePath);
+		const ext = file.relativePath.substring(file.relativePath.lastIndexOf("."));
+		await uploadWithPresignedUrl(
+			upload.url,
+			buffer,
+			contentTypes[ext] || "application/octet-stream",
 		);
 	}
 

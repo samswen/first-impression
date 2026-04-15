@@ -22,6 +22,7 @@ import {
 	ZOOM_SETTLE_DURATION,
 	zoomToElement,
 } from "./helpers";
+import type { QualitySignal } from "./quality";
 import { solveTurnstile } from "./turnstile-solver";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -66,6 +67,7 @@ export interface RecordingResult {
 	dir: string;
 	videoPath: string;
 	timeline: TimelineEntry[];
+	chatId: string | null;
 }
 
 /**
@@ -1329,6 +1331,9 @@ body { ${bgStyle} }
 
 			// --- Queries ---
 			let formSubmitted = false;
+			let chatId: string | null = null;
+			const qualitySignals: QualitySignal[] = [];
+
 			for (let i = 0; i < this.config.queries.length; i++) {
 				if (signal?.aborted) throw new Error("Cancelled");
 				const query = this.config.queries[i];
@@ -1355,6 +1360,40 @@ body { ${bgStyle} }
 					.catch(() => null);
 
 				await page.waitForTimeout(PAUSE_AFTER_RESPONSE);
+
+				// --- Quality signal pass 1: capture DOM state BEFORE form handling ---
+				const cartVisible = await panel
+					.locator(".chat-cart")
+					.isVisible()
+					.catch(() => false);
+				const cartItems = cartVisible
+					? await panel
+							.locator(".chat-cart-item-title")
+							.allTextContents()
+							.catch(() => [] as string[])
+					: [];
+				const formVisibleBeforeHandle = await panel
+					.locator(".chat-followup-form")
+					.isVisible()
+					.catch(() => false);
+
+				// Extract chatId from localStorage after first query
+				if (i === 0) {
+					chatId = await page
+						.evaluate(() => {
+							for (const key of Object.keys(localStorage)) {
+								if (
+									key.startsWith("xinfer_") &&
+									key.endsWith("_chatId")
+								) {
+									return localStorage.getItem(key);
+								}
+							}
+							return null;
+						})
+						.catch(() => null);
+					if (chatId) emit("progress", `Chat ID: ${chatId}`);
+				}
 
 				// Handle contact form — check after every response since the agent
 				// can request contact info for any query, not just predictable ones.
@@ -1406,6 +1445,12 @@ body { ${bgStyle} }
 					}
 				}
 
+				// --- Quality signal pass 2: capture DOM state AFTER form handling ---
+				const orderVisible = await panel
+					.locator(".chat-followup-submitted")
+					.isVisible()
+					.catch(() => false);
+
 				const minDuration = filledFormThisQuery
 					? MIN_QUERY_WITH_FORM_DURATION
 					: MIN_QUERY_DURATION;
@@ -1413,6 +1458,20 @@ body { ${bgStyle} }
 				if (queryElapsed < minDuration) {
 					await page.waitForTimeout(minDuration - queryElapsed);
 				}
+
+				// Build quality signal from both passes
+				qualitySignals.push({
+					action: actionName,
+					query,
+					duration: (this.now() - queryStart),
+					minDuration: minDuration / 1000,
+					cartVisible,
+					cartItems,
+					formVisible: formVisibleBeforeHandle,
+					formSubmitted: filledFormThisQuery,
+					orderVisible,
+					responseText: responseText?.trim() || "",
+				});
 
 				// Append form context to response if a contact form was filled during this query
 				const fullResponse = filledFormThisQuery
@@ -1430,6 +1489,12 @@ body { ${bgStyle} }
 				});
 				emit("action-end", `Query ${i + 1} complete`, actionName);
 			}
+
+			// Save quality signals for post-recording evaluation
+			fs.writeFileSync(
+				path.join(dir, "quality-signals.json"),
+				JSON.stringify(qualitySignals, null, 2),
+			);
 
 			// --- Zoom out ---
 			const zoomOutStart = this.now();
@@ -1645,12 +1710,23 @@ body { ${bgStyle} }
 			const timelinePath = path.join(dir, "timeline.json");
 			fs.writeFileSync(timelinePath, JSON.stringify(this.timeline, null, 2));
 
+			// Save chatId to config.json for later publish flow
+			if (chatId) {
+				const configPath = path.join(dir, "config.json");
+				if (fs.existsSync(configPath)) {
+					const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+					config.chatId = chatId;
+					fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+				}
+			}
+
 			emit("done", `Recording saved to ${dir}`);
 
 			return {
 				dir,
 				videoPath: rawPath,
 				timeline: this.timeline,
+				chatId,
 			};
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);

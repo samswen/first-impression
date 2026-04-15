@@ -8,9 +8,12 @@ import {
 	composeVideo,
 	defaultSubtitleText,
 	generateIntroOutro,
+	publishFailureRecording,
 	publishRecording,
 	startRecording,
 } from "./pipeline";
+import { evaluateQuality, formatFailureReason } from "./quality";
+import type { QualitySignal } from "./quality";
 import { fetchTenantInfo } from "./tenant";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -413,6 +416,39 @@ async function run() {
 		saveState(dir, state);
 	}
 
+	// ── Quality gate (between step 2 and step 3) ────────────────
+
+	if (cfg.from <= 2) {
+		const signalsPath = path.join(dir, "quality-signals.json");
+		if (fs.existsSync(signalsPath)) {
+			const signals: QualitySignal[] = JSON.parse(
+				fs.readFileSync(signalsPath, "utf-8"),
+			);
+			const qualityResult = evaluateQuality(signals);
+
+			if (!qualityResult.passed) {
+				console.error("\n[FAIL] Recording quality check failed:");
+				for (const f of qualityResult.failures) {
+					console.error(`  ${f.query}: ${f.reason}`);
+				}
+				if (!cfg.noPublish) {
+					const email = cfg.email || "demo@xinfer.ai";
+					const failureReason = formatFailureReason(qualityResult);
+					const failResult = await publishFailureRecording(dir, tenantId, {
+						email,
+						failureReason,
+					});
+					console.log(
+						"  Failure report:",
+						JSON.stringify(failResult, null, 2),
+					);
+				}
+				process.exit(1);
+			}
+			log("Quality check passed");
+		}
+	}
+
 	// ── [3/6] Intro & outro ──────────────────────────────────────
 
 	if (cfg.from <= 3) {
@@ -434,9 +470,24 @@ async function run() {
 
 	if (cfg.from <= 4) {
 		console.log("\n[4/6] Add voiceover");
-		await addVoiceoverToVideo(dir, "raw.webm", tenantId, log);
+		const voResult = await addVoiceoverToVideo(dir, "raw.webm", tenantId, log);
 		state.completedStep = 4;
 		saveState(dir, state);
+
+		if (!voResult.usedLlmNarration) {
+			console.error(
+				"\n[FAIL] AI narration unavailable — uploading failure report",
+			);
+			if (!cfg.noPublish) {
+				const email = cfg.email || "demo@xinfer.ai";
+				const failResult = await publishFailureRecording(dir, tenantId, {
+					email,
+					failureReason: "AI narration unavailable",
+				});
+				console.log("  Failure report:", JSON.stringify(failResult, null, 2));
+			}
+			process.exit(1);
+		}
 	}
 
 	// ── [5/6] Compose ────────────────────────────────────────────

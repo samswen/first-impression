@@ -8,6 +8,7 @@ import {
 	DeleteMessageCommand,
 	ReceiveMessageCommand,
 	SQSClient,
+	SendMessageCommand,
 } from "@aws-sdk/client-sqs";
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -21,6 +22,7 @@ interface QueueTask {
 	force?: boolean;
 	snapshotUrl?: string;
 	snapshotMobileUrl?: string;
+	failedCount?: number;
 }
 
 // ─── Config ──────────────────────────────────────────────────────────
@@ -60,7 +62,8 @@ function buildCliArgs(task: QueueTask): string[] {
 	return args;
 }
 
-const CLI_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const CLI_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_RETRIES = 3;
 
 function runCli(
 	args: string[],
@@ -89,7 +92,7 @@ function runCli(
 		let timedOut = false;
 		const timer = setTimeout(() => {
 			timedOut = true;
-			log("CLI process timed out after 30 minutes, killing...");
+			log("CLI process timed out after 10 minutes, killing...");
 			child.kill("SIGTERM");
 			// Force kill if it doesn't exit within 10s
 			setTimeout(() => child.kill("SIGKILL"), 10_000);
@@ -116,12 +119,12 @@ async function sendFailureNotification(
 	if (!sns || !SNS_FAILURE_TOPIC_ARN) return;
 
 	const subject = `First Impression failed: tenant ${task.tenantId}`;
+	const attempt = (task.failedCount || 0) + 1;
 	const message = [
-		`Pipeline failed for tenant ${task.tenantId}`,
+		`Pipeline failed for tenant ${task.tenantId} (attempt ${attempt}/${MAX_RETRIES})`,
 		reason ? `Reason: ${reason}` : `Exit code: ${exitCode}`,
+		attempt < MAX_RETRIES ? "Task will be re-queued." : "Max retries reached — giving up.",
 		`Task: ${JSON.stringify(task, null, 2)}`,
-		"",
-		"The message will return to the queue after the visibility timeout.",
 	].join("\n");
 
 	try {
@@ -165,13 +168,24 @@ async function shouldShutdown(): Promise<boolean> {
 
 // ─── Main loop ───────────────────────────────────────────────────────
 
+async function requeueTask(task: QueueTask): Promise<void> {
+	const retryTask = { ...task, failedCount: (task.failedCount || 0) + 1 };
+	await sqs.send(
+		new SendMessageCommand({
+			QueueUrl: SQS_QUEUE_URL,
+			MessageBody: JSON.stringify(retryTask),
+		}),
+	);
+	log(`Re-queued task for tenant ${task.tenantId} (attempt ${retryTask.failedCount}/${MAX_RETRIES})`);
+}
+
 async function poll(): Promise<boolean> {
 	const res = await sqs.send(
 		new ReceiveMessageCommand({
 			QueueUrl: SQS_QUEUE_URL,
 			MaxNumberOfMessages: 1,
 			WaitTimeSeconds: 20,
-			VisibilityTimeout: 1800,
+			VisibilityTimeout: 600,
 		}),
 	);
 
@@ -181,37 +195,31 @@ async function poll(): Promise<boolean> {
 	const msg = messages[0];
 	const receiptHandle = msg.ReceiptHandle;
 
+	// Delete message immediately — we'll re-queue on failure if needed
+	if (receiptHandle) {
+		await sqs.send(
+			new DeleteMessageCommand({
+				QueueUrl: SQS_QUEUE_URL,
+				ReceiptHandle: receiptHandle,
+			}),
+		);
+	}
+
 	let task: QueueTask;
 	try {
 		task = JSON.parse(msg.Body || "{}");
 	} catch {
-		log(`Invalid message body: ${msg.Body}`);
-		// Delete malformed messages so they don't block the queue
-		if (receiptHandle) {
-			await sqs.send(
-				new DeleteMessageCommand({
-					QueueUrl: SQS_QUEUE_URL,
-					ReceiptHandle: receiptHandle,
-				}),
-			);
-		}
+		log(`Invalid message body, discarding: ${msg.Body}`);
 		return true;
 	}
 
 	if (!task.tenantId) {
-		log("Message missing tenantId, deleting");
-		if (receiptHandle) {
-			await sqs.send(
-				new DeleteMessageCommand({
-					QueueUrl: SQS_QUEUE_URL,
-					ReceiptHandle: receiptHandle,
-				}),
-			);
-		}
+		log("Message missing tenantId, discarding");
 		return true;
 	}
 
-	log(`Processing tenant ${task.tenantId}`);
+	const attempt = (task.failedCount || 0) + 1;
+	log(`Processing tenant ${task.tenantId} (attempt ${attempt}/${MAX_RETRIES})`);
 	const args = buildCliArgs(task);
 	log(`CLI args: tsx cli.ts ${args.join(" ")}`);
 
@@ -226,22 +234,22 @@ async function poll(): Promise<boolean> {
 
 	if (!timedOut && exitCode === 0) {
 		log(`Tenant ${task.tenantId} completed successfully`);
-		if (receiptHandle) {
-			await sqs.send(
-				new DeleteMessageCommand({
-					QueueUrl: SQS_QUEUE_URL,
-					ReceiptHandle: receiptHandle,
-				}),
-			);
-			log("Message deleted from queue");
-		}
 	} else if (timedOut) {
-		log(`Tenant ${task.tenantId} timed out after 30 minutes`);
-		await sendFailureNotification(task, exitCode, "Timed out after 30 minutes");
+		log(`Tenant ${task.tenantId} timed out after 10 minutes`);
+		await sendFailureNotification(task, exitCode, "Timed out after 10 minutes");
+		if ((task.failedCount || 0) < MAX_RETRIES) {
+			await requeueTask(task);
+		} else {
+			log(`Tenant ${task.tenantId} reached max retries, giving up`);
+		}
 	} else {
 		log(`Tenant ${task.tenantId} failed with exit code ${exitCode}`);
 		await sendFailureNotification(task, exitCode);
-		// Don't delete — message returns to queue after visibility timeout
+		if ((task.failedCount || 0) < MAX_RETRIES) {
+			await requeueTask(task);
+		} else {
+			log(`Tenant ${task.tenantId} reached max retries, giving up`);
+		}
 	}
 
 	return true;

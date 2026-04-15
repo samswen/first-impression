@@ -92,6 +92,7 @@ export interface VoiceoverOptions {
 export interface VoiceoverResult {
 	videoPath: string;
 	clipCount: number;
+	usedLlmNarration: boolean;
 }
 
 interface NarrationClip {
@@ -538,5 +539,9 @@ export async function addVoiceover(
 		`Voiceover done: ${outputFile} (${(stat.size / 1024 / 1024).toFixed(1)}MB)`,
 	);
 
-	return { videoPath: outputPath, clipCount: clips.length };
+	return {
+		videoPath: outputPath,
+		clipCount: clips.length,
+		usedLlmNarration: llmNarrations !== null,
+	};
 }

@@ -19,7 +19,7 @@ import { type ProgressEvent, Recorder, type TimelineEntry } from "./recorder";
 import type { TenantInfo } from "./tenant";
 import { fetchTenantInfo } from "./tenant";
 import { trimVideo } from "./trim";
-import { publishDemo } from "./upload";
+import { publishDemo, publishFailureReport } from "./upload";
 import { addVoiceover } from "./voiceover";
 
 const execP = promisify(execFile);
@@ -701,7 +701,7 @@ export async function addVoiceoverToVideo(
 	tenantId: number,
 	onProgress?: (message: string) => void,
 	signal?: AbortSignal,
-): Promise<{ clipCount: number; outputFile: string }> {
+): Promise<{ clipCount: number; outputFile: string; usedLlmNarration: boolean }> {
 	const videoPath = path.join(dir, videoFile);
 	if (!fs.existsSync(videoPath)) {
 		throw new Error(`${videoFile} not found`);
@@ -730,7 +730,11 @@ export async function addVoiceoverToVideo(
 		JSON.stringify(timeline, null, 2),
 	);
 
-	return { clipCount: result.clipCount, outputFile: voicedFile };
+	return {
+		clipCount: result.clipCount,
+		outputFile: voicedFile,
+		usedLlmNarration: result.usedLlmNarration,
+	};
 }
 
 /** Generate intro and outro scenes. */
@@ -1024,6 +1028,7 @@ export async function publishRecording(
 
 	const diagLogPath = path.join(dir, "snapshot-diag.log");
 	const mobileDiagLogPath = path.join(dir, "snapshot-mobile-diag.log");
+	const chatId = config?.chatId as string | undefined;
 	const result = await publishDemo({
 		tenantInfo,
 		tenantSlug,
@@ -1046,6 +1051,7 @@ export async function publishRecording(
 		autoCreateUser: opts?.autoCreateUser,
 		subtitle: opts?.subtitle,
 		generatedContent: opts?.generatedContent,
+		chatId,
 	});
 
 	const publishResult: PublishResult = {
@@ -1100,4 +1106,48 @@ export async function publishRecording(
 	}
 
 	return publishResult;
+}
+
+/** Publish a failure report to S3 (narration failed, upload artifacts for investigation). */
+export async function publishFailureRecording(
+	dir: string,
+	tenantId: number,
+	opts?: {
+		email?: string;
+		failureReason?: string;
+	},
+): Promise<PublishResult> {
+	const tenantInfo = await fetchTenantInfo(tenantId);
+	const tenantSlug = tenantSlugFromInfo(tenantInfo, tenantId);
+
+	const configPath = path.join(dir, "config.json");
+	const config = fs.existsSync(configPath)
+		? JSON.parse(fs.readFileSync(configPath, "utf-8"))
+		: undefined;
+
+	const chatId = config?.chatId as string | undefined;
+	const result = await publishFailureReport({
+		tenantInfo,
+		tenantSlug,
+		recordingDir: dir,
+		config,
+		email: opts?.email,
+		chatId,
+		failureReason: opts?.failureReason,
+	});
+
+	return {
+		url: result.url,
+		video: "",
+		tenantSlug,
+		businessName:
+			tenantInfo.setup.businessName || tenantInfo.app.title || "your business",
+		assistantName:
+			tenantInfo.setup.assistantName || tenantInfo.app.title || "AI Assistant",
+		website: tenantInfo.setup.website || tenantInfo.app.homePageUrl || null,
+		tagline: tenantInfo.setup.tagline || null,
+		inventoryDescription: tenantInfo.setup.inventoryDescription || null,
+		publishedId: result.publishedId,
+		version: result.version,
+	};
 }
