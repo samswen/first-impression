@@ -185,8 +185,8 @@ pnpm worker
 Add `.env` variables:
 
 ```env
-SQS_QUEUE_URL=https://sqs.us-east-2.amazonaws.com/873772320074/first-impression
-SNS_FAILURE_TOPIC_ARN=arn:aws:sns:us-east-2:873772320074:first-impression-failure
+SQS_QUEUE_URL=https://sqs.us-east-2.amazonaws.com/123456789012/first-impression
+SNS_FAILURE_TOPIC_ARN=arn:aws:sns:us-east-2:123456789012:first-impression-failure
 AWS_REGION=us-east-2
 ```
 
