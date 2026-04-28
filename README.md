@@ -58,25 +58,17 @@ pnpm exec playwright install chromium
 Create `.env` with:
 
 ```env
-# rag-chatbot API (for tenant info)
+# rag-chatbot API (for tenant info, TTS, and publishing)
 RAG_CHATBOT_BASE_URL=https://your-rag-chatbot-url
 FIRST_IMPRESSION_API_KEY=your-api-key
 
 # Auth
 FIRST_IMPRESSION_SECRET=your-auth-secret
 
-# ElevenLabs (text-to-speech)
-ELEVENLABS_API_KEY=your-api-key
+# ElevenLabs voice settings (for TTS cache hash — TTS itself is proxied through rag-chatbot)
 ELEVENLABS_VOICE_ID=your-voice-id          # optional, defaults to "Hope"
 ELEVENLABS_VOICE_MODEL=eleven_flash_v2_5   # optional
 ELEVENLABS_VOICE_SPEED=0.92                # optional
-
-# AWS S3 (for publishing)
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-key
-AWS_SECRET_ACCESS_KEY=your-secret
-S3_BUCKET=your-bucket
-ASSETS_BASE_URL=https://assets.xinfer.com
 ```
 
 Requires `ffmpeg` and `ffprobe` on PATH.
@@ -370,5 +362,4 @@ boot.sh              EC2 boot script (git pull + pnpm install)
 - Node.js 18+
 - FFmpeg and FFprobe on PATH
 - Playwright Chromium browser
-- ElevenLabs API key (for voiceover)
-- AWS credentials (for publishing)
+- AWS credentials (for SQS worker only — publishing uses presigned URLs via rag-chatbot API)
